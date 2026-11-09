@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Человек-паук и Веном</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+      canvas { display: block; }
+      #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px #000; }
+      #title { position: absolute; top: 14px; left: 16px; font-size: 26px; font-weight: 800; letter-spacing: 1px; }
+      #title small { display: block; font-size: 13px; font-weight: 400; opacity: 0.8; }
+      #pick { position: absolute; top: 14px; right: 16px; display: flex; gap: 8px; pointer-events: auto; }
+      #pick button {
+        font: 700 14px system-ui; padding: 10px 16px; border-radius: 8px; cursor: pointer; color: #fff;
+        border: 2px solid transparent; opacity: 0.75;
+      }
+      #pick button.active { opacity: 1; border-color: #fff; }
+      #btn-spider { background: linear-gradient(135deg, #c8102e 55%, #1d3c9e 55%); }
+      #btn-venom { background: #0b0b12; }
+      #help {
+        position: absolute; bottom: 14px; left: 16px; font-size: 13px; line-height: 1.6;
+        background: rgba(0, 0, 0, 0.45); padding: 10px 14px; border-radius: 8px;
+      }
+      #help b { display: inline-block; min-width: 92px; color: #ffd75e; }
+      #crosshair {
+        position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%;
+        background: rgba(255, 255, 255, 0.8); box-shadow: 0 0 4px #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <div id="title"><span id="name">Человек-паук</span><small>Кликни по экрану, чтобы управлять камерой мышью</small></div>
+      <div id="pick">
+        <button id="btn-spider" class="active">Человек-паук</button>
+        <button id="btn-venom">Веном</button>
+      </div>
+      <div id="crosshair"></div>
+      <div id="help">
+        <div><b>WASD</b>движение, <b>Shift</b>бег</div>
+        <div><b>Пробел</b>прыжок / прыжок от стены</div>
+        <div><b>ЛКМ / E</b>держать — паутина / щупальце, раскачивание</div>
+        <div><b>Q</b>атака (паук: комбо, веном: удар щупальцами)</div>
+        <div><b>F</b>выстрел паутиной / захват щупальцем</div>
+        <div><b>T</b>превращение · <b>1 / 2</b>выбор героя · <b>колесо</b>зум</div>
+        <div>Подойди к стене — персонаж полезет по ней · <b>H</b>скрыть подсказки</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
