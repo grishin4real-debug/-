@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face { font-family: 'Unbounded'; src: url('fonts/Unbounded.ttf'); font-weight: 200 900; }
+  @font-face { font-family: 'Pixel'; src: url('fonts/PressStart2P.ttf'); }
+  html, body { margin: 0; background: #000; }
+  #thumb {
+    position: relative; width: 1280px; height: 720px; overflow: hidden;
+    font-family: 'Unbounded', sans-serif; color: #fff;
+  }
+  /* split: left 2D, right 3D, slanted divider */
+  .panel { position: absolute; inset: 0; }
+  #left { clip-path: polygon(0 0, 57% 0, 43% 100%, 0 100%); background: #5c94fc; }
+  #left canvas { position: absolute; left: 0; top: 0; width: 750px; height: 720px; image-rendering: pixelated; }
+  #right { clip-path: polygon(57% 0, 100% 0, 100% 100%, 43% 100%); }
+  #right img {
+    position: absolute; left: 430px; top: -170px; width: 900px; height: 900px; object-fit: cover;
+    filter: saturate(1.35) contrast(1.12) brightness(1.05);
+  }
+  #divider {
+    position: absolute; left: 0; top: 0; width: 1280px; height: 720px; pointer-events: none;
+  }
+  .tag {
+    position: absolute; top: 150px; font-weight: 900; font-size: 60px; line-height: 1;
+    padding: 10px 20px 12px; border-radius: 14px; letter-spacing: 2px;
+  }
+  #tag2d { left: 36px; font-family: 'Pixel'; font-size: 46px; padding: 16px 18px; background: #fff; color: #111; border-radius: 0; box-shadow: 6px 6px 0 #111; }
+  #tag3d { right: 36px; background: linear-gradient(135deg, #ff2a4d, #b0124a); color: #fff; box-shadow: 0 8px 30px rgba(255, 40, 80, .55); }
+
+  #title {
+    position: absolute; left: 0; right: 0; top: 26px; text-align: center;
+    font-weight: 900; font-size: 88px; line-height: 1; letter-spacing: -1px;
+    -webkit-text-stroke: 14px #000; paint-order: stroke fill;
+    text-shadow: 0 10px 0 #000, 0 14px 30px rgba(0,0,0,.6);
+  }
+  #title .plus { color: #ffe600; }
+  #promo {
+    position: absolute; left: 36px; bottom: 34px; transform: rotate(-3deg); transform-origin: left bottom;
+    background: #ffe600; color: #000; font-weight: 900; font-size: 68px; line-height: 1;
+    padding: 18px 30px 22px; border-radius: 10px; letter-spacing: -1px;
+    box-shadow: 0 0 0 8px #000, 0 18px 40px rgba(0,0,0,.55);
+  }
+</style>
+</head>
+<body>
+<div id="thumb">
+  <div class="panel" id="left"><canvas id="pix" width="250" height="240"></canvas></div>
+  <div class="panel" id="right"><img id="shot" src="shots/venom_attack.png" /></div>
+  <svg id="divider" viewBox="0 0 1280 720">
+    <line x1="729.6" y1="-10" x2="550.4" y2="730" stroke="#000" stroke-width="22" />
+    <line x1="729.6" y1="-10" x2="550.4" y2="730" stroke="#fff" stroke-width="10" />
+  </svg>
+  <div class="tag" id="tag2d">2D</div>
+  <div class="tag" id="tag3d">3D</div>
+  <div id="title"></div>
+  <div id="promo"></div>
+</div>
+<script>
+  // Text is configurable via query string: ?title=...&promo=...
+  const q = new URLSearchParams(location.search);
+  const title = q.get('title') || 'OPUS 5.5 + GPT 6.1';
+  document.getElementById('title').innerHTML = title
+    .split('+').map((s) => s.trim()).join(' <span class="plus">+</span> ');
+  document.getElementById('promo').textContent = q.get('promo') || 'БЕСПЛАТНО 3 МЕСЯЦА';
+
+  // ---- retro 2D platformer, drawn at low resolution and upscaled 3x ----
+  const c = document.getElementById('pix');
+  const g = c.getContext('2d');
+  const px = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+
+  px(0, 0, 250, 240, '#5c94fc');
+  // clouds
+  for (const [x, y] of [[20, 112], [150, 100], [95, 130]]) {
+    px(x, y + 4, 26, 6, '#fff'); px(x + 4, y, 16, 4, '#fff'); px(x + 2, y + 10, 22, 2, '#cfe3ff');
+  }
+  // skyline
+  const blds = [[0, 150, 34, '#3b4a8c'], [36, 128, 28, '#2e3a73'], [66, 160, 30, '#3b4a8c'], [100, 138, 26, '#2e3a73'], [128, 166, 40, '#3b4a8c'], [172, 140, 30, '#2e3a73'], [206, 156, 44, '#3b4a8c']];
+  for (const [x, y, w, col] of blds) {
+    px(x, y, w, 200 - y, col);
+    for (let wy = y + 4; wy < 196; wy += 7) for (let wx = x + 3; wx < x + w - 3; wx += 6) px(wx, wy, 3, 4, (wx * 7 + wy * 3) % 5 ? '#1c2450' : '#ffd35a');
+  }
+  // ground bricks
+  px(0, 200, 250, 40, '#c84c0c');
+  for (let y = 200; y < 240; y += 8) for (let x = (y / 8) % 2 ? 0 : -6; x < 250; x += 12) {
+    px(x, y, 11, 1, '#fcbcb0'); px(x, y, 1, 7, '#fcbcb0'); px(x, y + 7, 12, 1, '#000');
+  }
+  // floating platform + question block + coins
+  for (let x = 120; x < 168; x += 8) { px(x, 150, 8, 8, '#c84c0c'); px(x, 150, 8, 1, '#fcbcb0'); px(x, 157, 8, 1, '#000'); }
+  px(176, 150, 8, 8, '#fca044'); px(176, 157, 8, 1, '#000'); px(179, 152, 2, 4, '#000');
+  for (const x of [128, 140, 152]) { px(x + 1, 138, 4, 7, '#fcd000'); px(x + 2, 139, 1, 5, '#fff7a0'); }
+  // enemy goomba-ish blob
+  px(206, 190, 12, 8, '#7a3b10'); px(204, 194, 16, 4, '#7a3b10'); px(208, 192, 2, 2, '#fff'); px(214, 192, 2, 2, '#fff'); px(206, 198, 4, 2, '#000'); px(214, 198, 4, 2, '#000');
+
+  // Spider-Man sprite (12x16), scaled 3x in logical pixels
+  const sprite = [
+    '....RRRR....',
+    '...RRRRRR...',
+    '..RWWRRWWR..',
+    '..RWKRRKWR..',
+    '..RRRRRRRR..',
+    '...RRRRRR...',
+    '.BBRRKKRRBB.',
+    'BBRRRKKRRRBB',
+    'RR.RRKKRR.RR',
+    'RR.RRRRRR.RR',
+    '...BBBBBB...',
+    '...BB..BB...',
+    '..BB....BB..',
+    '..BB....BB..',
+    '.RRR....RRR.',
+    '.RRR....RRR.',
+  ];
+  const col = { R: '#e01020', B: '#2038d0', W: '#fff', K: '#000' };
+  const sx = 70, sy = 92, s = 4;
+  // web line from raised hand to the sky
+  for (let i = 0; i < 40; i++) px(sx + 46 + i * 1.2, sy + 8 - i * 3, 2, 3, '#fff');
+  sprite.forEach((row, y) => [...row].forEach((ch, x) => { if (col[ch]) px(sx + x * s, sy + y * s, s, s, col[ch]); }));
+  // raised right arm
+  px(sx + 44, sy + 6, 4, 26, '#e01020');
+</script>
+</body>
+</html>
