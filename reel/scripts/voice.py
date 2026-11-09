@@ -1,9 +1,10 @@
 """Generates narrator voice-over, word timings, mouth envelope and SFX for the reel.
 
 Voice backends:
-  * ElevenLabs — used when ELEVENLABS_API_KEY is set. Voice: ELEVENLABS_VOICE_ID
-    (pick an energetic cartoon voice in the Voice Library), model: ELEVENLABS_MODEL_ID.
-    Word timings come from the /with-timestamps alignment.
+  * ElevenLabs — used when ELEVENLABS_API_KEY is set (key needs the Text to Speech permission).
+    Voice: ELEVENLABS_VOICE_ID (default: premade "Laura", works on the free plan), model: ELEVENLABS_MODEL_ID.
+    Word timings come from the /with-timestamps alignment. Takes are cached in public/voice/<id>.json
+    and reused while the text is unchanged.
   * piper (offline fallback) — usage: python3 scripts/voice.py <piper-binary> <voice.onnx>
 
 Writes public/voice/*.wav and src/timeline.json.
@@ -24,10 +25,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 FPS = 30
 script = json.loads((ROOT / "script.json").read_text(encoding="utf-8"))
 XI_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
-XI_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "")
+XI_VOICE = os.environ.get("ELEVENLABS_VOICE_ID") or "FGY2WhTYpPnrIDTdsKH5"
 XI_MODEL = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
-if XI_KEY and not XI_VOICE:
-    sys.exit("ELEVENLABS_VOICE_ID is required when ELEVENLABS_API_KEY is set")
 if not XI_KEY and len(sys.argv) < 3:
     sys.exit("usage: voice.py <piper-binary> <voice.onnx>  (or set ELEVENLABS_API_KEY)")
 
@@ -41,25 +40,23 @@ def ffmpeg(*args):
 
 def elevenlabs(text, out):
     """Returns word start times (seconds) taken from the character alignment."""
+    # mp3 works on every plan (pcm needs a paid tier); 1.2 is the API's max speed
     req = urllib.request.Request(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{XI_VOICE}/with-timestamps?output_format=pcm_44100",
+        f"https://api.elevenlabs.io/v1/text-to-speech/{XI_VOICE}/with-timestamps?output_format=mp3_44100_128",
         data=json.dumps({
             "text": text,
             "model_id": XI_MODEL,
-            "voice_settings": {"stability": 0.3, "similarity_boost": 0.8, "style": 0.7, "use_speaker_boost": True, "speed": 1.1},
+            "voice_settings": {"stability": 0.35, "similarity_boost": 0.8, "style": 0.6, "use_speaker_boost": True, "speed": 1.2},
         }).encode(),
         headers={"xi-api-key": XI_KEY, "Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=120) as r:
         data = json.load(r)
-    pcm = base64.b64decode(data["audio_base64"])
-    raw = out.with_suffix(".raw.wav")
-    with wave.open(str(raw), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(44100)
-        w.writeframes(pcm)
-    ffmpeg("-i", str(raw), "-af", "loudnorm=I=-14:TP=-1.5", "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", str(out))
+    raw = out.with_suffix(".raw.mp3")
+    raw.write_bytes(base64.b64decode(data["audio_base64"]))
+    tempo = float(script.get("tempo", 1.0))
+    ffmpeg("-i", str(raw), "-af", f"atempo={tempo},silenceremove=start_periods=1:start_threshold=-45dB,loudnorm=I=-14:TP=-1.5",
+           "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", str(out))
     raw.unlink()
     al = data.get("alignment") or {}
     chars, starts = al.get("characters", []), al.get("character_start_times_seconds", [])
@@ -70,7 +67,9 @@ def elevenlabs(text, out):
         elif prev_space:
             words.append(st)
             prev_space = False
-    return words
+    # timings follow the extra tempo change and the trimmed leading silence
+    lead = words[0] if words else 0
+    return [(t - lead) / tempo for t in words]
 
 
 def piper(text, out):
@@ -91,7 +90,19 @@ def piper(text, out):
 scenes = []
 for s in script["scenes"]:
     out = voice_dir / f"{s['id']}.wav"
-    word_t = elevenlabs(s["say"], out) if XI_KEY else piper(s["say"], out)
+    # Reuse committed ElevenLabs takes when the text and voice are unchanged:
+    # saves API quota and lets keyless CI runs keep the ElevenLabs voice.
+    meta = voice_dir / f"{s['id']}.json"
+    cached = json.loads(meta.read_text(encoding="utf-8")) if meta.exists() else None
+    if cached and out.exists() and cached["text"] == s["say"] and cached.get("tempo") == script.get("tempo", 1.0) \
+            and (not XI_KEY or cached["voice"] == XI_VOICE):
+        word_t = cached["words"]
+    elif XI_KEY:
+        word_t = elevenlabs(s["say"], out)
+        meta.write_text(json.dumps({"text": s["say"], "voice": XI_VOICE, "tempo": script.get("tempo", 1.0), "words": word_t}, ensure_ascii=False), encoding="utf-8")
+    else:
+        word_t = piper(s["say"], out)
+        meta.unlink(missing_ok=True)
 
     with wave.open(str(out)) as w:
         sr = w.getframerate()

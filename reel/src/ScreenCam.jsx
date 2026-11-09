@@ -33,8 +33,8 @@ export const Ripple = ({ x, y, age }) => {
     <div
       style={{
         position: 'absolute', left: x - 70, top: y - 70, width: 140, height: 140, borderRadius: '50%',
-        border: `${8 * (1 - k) + 2}px solid #FFE14D`, transform: `scale(${0.2 + k * 1.2})`, opacity: 1 - k,
-        boxShadow: '0 0 30px rgba(255,225,77,.7)',
+        border: `${8 * (1 - k) + 2}px solid #fff`, transform: `scale(${0.2 + k * 1.2})`, opacity: 1 - k,
+        boxShadow: '0 0 20px #22e6ff, inset 0 0 20px #ff2bd6',
       }}
     />
   );
@@ -45,7 +45,7 @@ export const Ripple = ({ x, y, age }) => {
  * cam: [{t, x, y, s}] — focus point in source px and absolute scale.
  * cursor: [{t, x, y}] in source px; clicks: [{t, x, y}].
  */
-export const ScreenCam = ({ src, cam, cursor, clicks = [], top = 640, w = 1000, h = 800, delay = 0 }) => {
+export const ScreenCam = ({ src, cam, cursor, clicks = [], top = 640, w = 1000, h = 800, delay = 0, neon = '#22e6ff' }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = Math.max(0, (frame - delay) / fps);
@@ -80,12 +80,20 @@ export const ScreenCam = ({ src, cam, cursor, clicks = [], top = 640, w = 1000, 
           opacity: enter,
         }}
       >
-        {/* glow */}
-        <div style={{ position: 'absolute', inset: -30, borderRadius: 70, background: 'radial-gradient(closest-side, rgba(255,60,90,.35), transparent)', filter: 'blur(30px)' }} />
+        {/* neon underglow */}
+        <div style={{ position: 'absolute', inset: -40, borderRadius: 80, background: `radial-gradient(closest-side, ${neon}66, transparent)`, filter: 'blur(30px)' }} />
+        {/* chrome bezel */}
+        <div
+          style={{
+            position: 'absolute', inset: -10, borderRadius: 54,
+            background: `linear-gradient(${135 + Math.sin(frame / 30) * 20}deg, #ffffff 0%, #8e9ab0 22%, #1c2230 45%, ${neon} 55%, #e8eef8 72%, #5d6a80 100%)`,
+            boxShadow: `0 0 0 1px rgba(255,255,255,.5), 0 0 36px ${neon}88, 0 50px 120px rgba(0,0,0,.65)`,
+          }}
+        />
         <div
           style={{
             position: 'absolute', inset: 0, borderRadius: 44, overflow: 'hidden', background: '#fff',
-            boxShadow: '0 50px 120px rgba(0,0,0,.6), 0 0 0 2px rgba(255,255,255,.18), inset 0 0 0 1px rgba(255,255,255,.4)',
+            boxShadow: 'inset 0 0 0 2px rgba(0,0,0,.6)',
           }}
         >
           <div style={{ position: 'absolute', left: tx, top: ty, width: SRC_W, height: SRC_H, transform: `scale(${s})`, transformOrigin: '0 0' }}>

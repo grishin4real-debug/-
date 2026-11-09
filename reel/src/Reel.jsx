@@ -11,21 +11,22 @@ import { Narrator } from './Narrator.jsx';
 import { Captions } from './Captions.jsx';
 import { PixelScene } from './PixelScene.jsx';
 import { Confetti, Shake } from './Fx.jsx';
+import { NEON, glass, neonText } from './style.js';
 
 const TITLE_Y = 230;
 const MEDIA_TOP = 680;
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' };
 const TG = timeline.telegram || '';
 
-// per-scene backdrop colours [blob1, blob2, blob3]
+// per-scene neon palette [accent, aurora 2, aurora 3]; accent tints chrome, rings and grid
 const PALETTES = {
-  hook: ['#ff2a4d', '#facc15', '#6d28d9'],
-  plan: ['#1d4ed8', '#ff2a4d', '#0ea5e9'],
-  coupon: ['#16a34a', '#facc15', '#0d9488'],
-  zero: ['#facc15', '#ea580c', '#16a34a'],
-  inside: ['#7c3aed', '#db2777', '#2563eb'],
-  versus: ['#e11d48', '#2563eb', '#111827'],
-  tg: ['#0ea5e9', '#229ED9', '#6d28d9'],
+  hook: ['#ff2bd6', '#7c3aed', '#22e6ff'],
+  plan: ['#22e6ff', '#3b82f6', '#ff2bd6'],
+  coupon: ['#a3ff12', '#0d9488', '#22e6ff'],
+  zero: ['#ffd166', '#ff2bd6', '#a3ff12'],
+  inside: ['#8b5cf6', '#ff2bd6', '#22e6ff'],
+  versus: ['#ff2bd6', '#2563eb', '#ff4d4d'],
+  tg: ['#22e6ff', '#229ed9', '#8b5cf6'],
 };
 // narrator placement per scene (captions avoid the narrator's side)
 const STAGE = {
@@ -54,7 +55,7 @@ const Shot = ({ dur, children }) => {
 
 const Flash = ({ color = '#fff' }) => {
   const f = useCurrentFrame();
-  const o = interpolate(f, [0, 2, 8], [0, 0.85, 0], { extrapolateRight: 'clamp' });
+  const o = interpolate(f, [0, 2, 9], [0, 0.5, 0], { extrapolateRight: 'clamp' });
   return <AbsoluteFill style={{ background: color, opacity: o, pointerEvents: 'none' }} />;
 };
 
@@ -65,8 +66,8 @@ const Boom = ({ at }) => (
   </Sequence>
 );
 
-/** Glossy "ticket" card with a price that rolls down to 0. */
-const PriceTicket = ({ at, y, from = 20, label = 'PLUS · 3 МЕСЯЦА' }) => {
+/** Glass ticket with a chrome rim; price rolls down to 0. */
+const PriceTicket = ({ at, y, from = 20, label = 'PLUS · 3 МЕСЯЦА', neon = NEON.pink }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
   const inn = spring({ frame: f - at, fps, config: { damping: 11, stiffness: 120 } });
@@ -75,19 +76,18 @@ const PriceTicket = ({ at, y, from = 20, label = 'PLUS · 3 МЕСЯЦА' }) => 
   return (
     <div
       style={{
-        position: 'absolute', left: 140, top: y, width: 800, height: 520, borderRadius: 56,
-        background: 'linear-gradient(140deg, #FFE14D 0%, #FFB020 55%, #FF6A00 100%)',
-        boxShadow: '0 14px 0 #9A3412, 0 50px 120px rgba(0,0,0,.55), inset 0 0 0 6px rgba(255,255,255,.45)',
+        position: 'absolute', left: 140, top: y, width: 800, height: 520, ...glass(neon, 56),
         transform: `perspective(1400px) translateY(${(1 - inn) * 900 + float}px) rotateX(${(1 - inn) * 50 + Math.sin(f / 25) * 6}deg) rotateY(${Math.sin(f / 31) * 10}deg) rotate(${(1 - inn) * -20 - 3}deg)`,
         overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       }}
     >
-      <div style={{ position: 'absolute', top: -200, bottom: -200, left: shine, width: 160, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent)', transform: 'rotate(20deg)' }} />
-      {/* ticket notches */}
-      <div style={{ position: 'absolute', left: -50, top: 210, width: 100, height: 100, borderRadius: '50%', background: '#0b0b12' }} />
-      <div style={{ position: 'absolute', right: -50, top: 210, width: 100, height: 100, borderRadius: '50%', background: '#0b0b12' }} />
-      <div style={{ fontFamily: 'Unbounded', fontWeight: 800, fontSize: 52, color: '#3B1203', letterSpacing: 2 }}>{label}</div>
-      <Counter from={from} to={0} start={at + 14} len={34} size={300} prefix="$" color="#1A0A00" />
+      <div style={{ position: 'absolute', top: -200, bottom: -200, left: shine, width: 160, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent)', transform: 'rotate(20deg)' }} />
+      {/* perforation line */}
+      <div style={{ position: 'absolute', left: 60, right: 60, top: 150, borderTop: '3px dashed rgba(255,255,255,.25)' }} />
+      <div style={{ position: 'absolute', top: 56, fontFamily: 'Unbounded', fontWeight: 800, fontSize: 46, letterSpacing: 4, ...neonText(NEON.cyan, 0.7) }}>{label}</div>
+      <div style={{ marginTop: 110 }}>
+        <Counter from={from} to={0} start={at + 14} len={34} size={300} prefix="$" neon={neon} />
+      </div>
     </div>
   );
 };
@@ -107,7 +107,7 @@ const Hook = ({ dur }) => (
 
 const Plan = () => (
   <ScreenCam
-    src="clips/plan.mp4" top={MEDIA_TOP}
+    src="clips/plan.mp4" top={MEDIA_TOP} neon={NEON.cyan}
     cam={[
       { t: 0, x: 677, y: 420, s: 1.12 }, { t: 1.6, x: 677, y: 440, s: 1.25 },
       { t: 3.2, x: 677, y: 470, s: 2.1 }, { t: 5, x: 677, y: 560, s: 2.6 }, { t: 7.5, x: 677, y: 560, s: 2.6 },
@@ -122,7 +122,7 @@ const Coupon = ({ dur }) => {
   return (
     <Shake at={[at]}>
       <ScreenCam
-        src="clips/coupon.mp4" top={MEDIA_TOP}
+        src="clips/coupon.mp4" top={MEDIA_TOP} neon={NEON.lime}
         cam={[
           { t: 0, x: 430, y: 430, s: 1.4 }, { t: 1.2, x: 430, y: 440, s: 2.1 }, { t: 6, x: 435, y: 450, s: 2.2 },
           { t: 8.6, x: 420, y: 360, s: 1.6 }, { t: 10.2, x: 340, y: 300, s: 2.2 }, { t: 12, x: 330, y: 240, s: 2.6 },
@@ -151,23 +151,23 @@ const Zero = ({ dur }) => {
     <Shake at={[72]}>
       <KineticTitle lines={[['ЦЕНА']]} dur={dur} size={170} y={TITLE_Y} fx="glitch" />
       {/* old price with drawn strike-through */}
-      <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP - 10, display: 'flex', justifyContent: 'center', transform: `scale(${old}) rotate(-4deg)` }}>
-        <div style={{ position: 'relative', fontFamily: 'Unbounded', fontWeight: 900, fontSize: 150, color: 'rgba(255,255,255,.75)' }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP - 70, display: 'flex', justifyContent: 'center', transform: `scale(${old}) rotate(-4deg)` }}>
+        <div style={{ position: 'relative', fontFamily: 'Dela', fontSize: 150, color: 'rgba(220,228,240,.55)', textShadow: '0 4px 14px rgba(0,0,0,.6)' }}>
           $20<span style={{ fontSize: 60 }}>/мес</span>
-          <div style={{ position: 'absolute', left: -20, top: '52%', height: 22, width: `${strike * 112}%`, background: '#FF3D71', borderRadius: 11, transform: 'rotate(-8deg)', boxShadow: '0 6px 20px rgba(255,61,113,.7)' }} />
+          <div style={{ position: 'absolute', left: -20, top: '52%', height: 16, width: `${strike * 112}%`, borderRadius: 8, transform: 'rotate(-8deg)', background: '#fff', boxShadow: `0 0 8px ${NEON.pink}, 0 0 22px ${NEON.pink}, 0 0 50px ${NEON.pink}` }} />
         </div>
       </div>
-      <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP + 190, display: 'flex', justifyContent: 'center' }}>
-        <Counter from={20} to={0} start={44} len={28} size={420} prefix="$" color="#FFE14D" />
+      <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP + 110, display: 'flex', justifyContent: 'center' }}>
+        <Counter from={20} to={0} start={44} len={28} size={370} prefix="$" neon={NEON.gold} />
       </div>
       {/* three month stamps */}
-      <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP + 680, display: 'flex', justifyContent: 'center', gap: 34 }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP + 510, display: 'flex', justifyContent: 'center', gap: 34 }}>
         {months.map((m, i) => {
           const p = spring({ frame: f - 90 - i * 8, fps, config: { damping: 8, stiffness: 180 } });
           return (
-            <div key={m} style={{ width: 260, height: 150, borderRadius: 30, background: '#fff', color: '#111', fontFamily: 'Unbounded', fontWeight: 900, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transform: `scale(${p}) rotate(${(1 - p) * 40 + (i - 1) * 5}deg)`, boxShadow: '0 10px 0 #16A34A, 0 30px 50px rgba(0,0,0,.4)' }}>
-              <div style={{ fontSize: 30, opacity: 0.6 }}>{m}</div>
-              <div style={{ fontSize: 62, color: '#16A34A' }}>$0</div>
+            <div key={m} style={{ width: 260, height: 150, ...glass(NEON.lime, 30), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transform: `scale(${p}) rotate(${(1 - p) * 40 + (i - 1) * 5}deg)` }}>
+              <div style={{ fontFamily: 'Unbounded', fontWeight: 700, fontSize: 28, color: 'rgba(255,255,255,.75)', letterSpacing: 3 }}>{m}</div>
+              <div style={{ fontFamily: 'Dela', fontSize: 64, ...neonText(NEON.lime, 0.8) }}>$0</div>
             </div>
           );
         })}
@@ -185,31 +185,32 @@ const Inside = ({ dur }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
   const cards = [
-    ['ИГРЫ', '#FF3D71', '#7C3AED'], ['САЙТЫ', '#38BDF8', '#2563EB'],
-    ['ВИДЕО', '#FACC15', '#EA580C'], ['ДИЗАЙН', '#22C55E', '#0D9488'],
+    ['ИГРЫ', NEON.pink], ['САЙТЫ', NEON.cyan],
+    ['ВИДЕО', NEON.gold], ['ДИЗАЙН', NEON.lime],
   ];
   const meta = Math.round(dur - 120);
   return (
     <>
-      <KineticTitle lines={[['ЧТО'], ['*ВНУТРИ?*']]} dur={dur} size={170} y={TITLE_Y} fx="wave" />
+      <KineticTitle lines={[['ЧТО'], ['*ВНУТРИ?*']]} dur={dur} size={170} y={TITLE_Y} fx="wave" neon={NEON.violet} />
       <div style={{ position: 'absolute', left: 70, right: 70, top: MEDIA_TOP + 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36 }}>
-        {cards.map(([t, a, b], i) => {
+        {cards.map(([t, c], i) => {
           // cards fly in, then collapse away when the "this reel" punchline lands
           const p = spring({ frame: f - 20 - i * 9, fps, config: { damping: 10, stiffness: 130 } })
             - spring({ frame: f - meta + i * 2, fps, config: { damping: 14, stiffness: 160 } });
           const hover = Math.sin((f + i * 20) / 14) * 10;
+          const shine = ((f * 6 + i * 90) % 900) - 300;
           return (
             <div
               key={t}
               style={{
-                height: 300, borderRadius: 44, background: `linear-gradient(140deg, ${a}, ${b})`, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: 'Unbounded', fontWeight: 900, fontSize: 72, color: '#fff', textShadow: '0 6px 0 rgba(0,0,0,.25)',
+                height: 300, ...glass(c, 44), position: 'relative', overflow: 'hidden',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
                 transform: `perspective(1000px) rotateY(${(1 - p) * 120}deg) translateY(${hover}px) rotate(${(i % 2 ? 1 : -1) * 2}deg)`,
                 opacity: p > 0.02 ? 1 : 0,
-                boxShadow: '0 30px 70px rgba(0,0,0,.5), inset 0 0 0 4px rgba(255,255,255,.3)',
               }}
             >
-              {t}
+              <div style={{ position: 'absolute', top: -100, bottom: -100, left: shine, width: 90, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.3), transparent)', transform: 'rotate(18deg)' }} />
+              <div style={{ fontFamily: 'Dela', fontSize: 66, ...neonText(c, 0.85) }}>{t}</div>
             </div>
           );
         })}
@@ -291,34 +292,34 @@ const Tg = ({ dur }) => {
 
   return (
     <Shake at={[clickAt]}>
-      <KineticTitle lines={[['*ПОДПИШИСЬ*']]} dur={dur} size={150} y={TITLE_Y - 20} fx="drop" stagger={2} />
+      <KineticTitle lines={[['*ПОДПИШИСЬ*']]} dur={dur} size={150} y={TITLE_Y - 20} fx="drop" stagger={2} neon={NEON.cyan} />
       <Sequence from={14} layout="none">
-        <KineticTitle lines={[['НА', 'МОЙ', 'ТЕЛЕГРАМ']]} dur={dur - 14} size={84} y={TITLE_Y + 170} fx="wave" stagger={1.4} />
+        <KineticTitle lines={[['НА', 'МОЙ', 'ТЕЛЕГРАМ']]} dur={dur - 14} size={84} y={TITLE_Y + 170} fx="wave" stagger={1.4} neon={NEON.cyan} />
       </Sequence>
       <svg width="1080" height="1920" style={{ position: 'absolute', inset: 0 }}>
-        <polyline points={trail.map((p) => p.join(',')).join(' ')} fill="none" stroke="rgba(255,255,255,.8)" strokeWidth="6" strokeDasharray="14 14" strokeLinecap="round" />
+        <polyline points={trail.map((p) => p.join(',')).join(' ')} fill="none" stroke={NEON.cyan} strokeWidth="6" strokeDasharray="14 14" style={{ filter: `drop-shadow(0 0 8px ${NEON.cyan})` }} strokeLinecap="round" />
       </svg>
       {f >= 20 && f <= 84 && (
         <div style={{ position: 'absolute', left: px - 50, top: py - 50, transform: `rotate(${f * 8}deg)` }}>
           <svg width="100" height="100" viewBox="0 0 24 24"><path d="M2 11 L22 3 L18 21 L11 15 L8 20 L8 14 L18 6 L6 13 Z" fill="#fff" /></svg>
         </div>
       )}
-      <div style={{ position: 'absolute', left: 540 - 170, top: MEDIA_TOP, transform: `scale(${logo}) rotate(${(1 - logo) * -180 + Math.sin(f / 12) * 6}deg)`, filter: 'drop-shadow(0 30px 60px rgba(34,158,217,.7))' }}>
+      <div style={{ position: 'absolute', left: 540 - 170, top: MEDIA_TOP, transform: `scale(${logo}) rotate(${(1 - logo) * -180 + Math.sin(f / 12) * 6}deg)`, filter: `drop-shadow(0 0 30px ${NEON.cyan}) drop-shadow(0 30px 60px rgba(34,158,217,.7))` }}>
         <TgLogo size={340} />
       </div>
       {TG && (
         <Sequence from={50} layout="none">
-          <KineticTitle lines={[[TG]]} dur={dur - 50} size={92} y={MEDIA_TOP + 370} fx="slice" stagger={1.3} color="#fff" charW={0.8} />
+          <KineticTitle lines={[[`*${TG}*`]]} dur={dur - 50} size={92} y={MEDIA_TOP + 370} fx="slice" stagger={1.3} neon={NEON.cyan} charW={0.95} />
         </Sequence>
       )}
       <div
         style={{
           position: 'absolute', left: 140, width: 800, top: MEDIA_TOP + 520, height: 160, borderRadius: 80,
-          background: clicked ? 'linear-gradient(90deg,#22C55E,#16A34A)' : 'linear-gradient(90deg,#2AABEE,#1E88D9)',
+          background: clicked ? 'linear-gradient(180deg,#5dff9a,#16a34a 55%,#0b6b2c)' : 'linear-gradient(180deg,#7fd8ff,#229ed9 50%,#0b5a8c)', border: '3px solid rgba(255,255,255,.7)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20,
           fontFamily: 'Unbounded', fontWeight: 900, fontSize: 64, color: '#fff',
           transform: `scale(${btn * pulse})`,
-          boxShadow: `0 12px 0 ${clicked ? '#14532D' : '#0B4F7A'}, 0 0 ${glow}px ${clicked ? 'rgba(34,197,94,.8)' : 'rgba(42,171,238,.9)'}`,
+          boxShadow: `inset 0 3px 0 rgba(255,255,255,.7), inset 0 -10px 20px rgba(0,0,0,.25), 0 10px 0 ${clicked ? '#0b4d22' : '#083c5e'}, 0 0 ${glow}px ${clicked ? '#5dff9a' : NEON.cyan}, 0 0 ${glow * 2.5}px ${clicked ? 'rgba(93,255,154,.5)' : 'rgba(34,230,255,.45)'}`, textShadow: '0 3px 0 rgba(0,0,0,.3)',
         }}
       >
         {clicked ? '✓ ТЫ С НАМИ' : 'ПОДПИСАТЬСЯ'}
@@ -331,7 +332,9 @@ const Tg = ({ dur }) => {
         <Html5Audio src={staticFile('sfx/ding.wav')} volume={0.8} />
       </Sequence>
       <Sequence from={clickAt + 30} layout="none">
-        <KineticTitle lines={[['ССЫЛКА', 'В', '*ОПИСАНИИ*']]} dur={dur - clickAt - 30} size={74} y={MEDIA_TOP + 730} fx="zoom" stagger={1.2} />
+        <div style={{ position: 'absolute', inset: 0, transform: 'translateX(150px)' }}>
+          <KineticTitle lines={[['ССЫЛКА', 'В'], ['*ОПИСАНИИ*']]} dur={dur - clickAt - 30} size={64} y={MEDIA_TOP + 720} fx="zoom" stagger={1.2} neon={NEON.cyan} />
+        </div>
       </Sequence>
     </Shake>
   );
@@ -342,8 +345,14 @@ const BODIES = { hook: Hook, plan: Plan, coupon: Coupon, zero: Zero, inside: Ins
 const useFonts = () => {
   const [handle] = useState(() => delayRender('fonts'));
   useEffect(() => {
-    const ff = new FontFace('Unbounded', `url(${staticFile('fonts/Unbounded.ttf')})`, { weight: '200 900' });
-    ff.load().then((f) => { document.fonts.add(f); continueRender(handle); });
+    const faces = [
+      new FontFace('Unbounded', `url(${staticFile('fonts/Unbounded.ttf')})`, { weight: '200 900' }),
+      new FontFace('Dela', `url(${staticFile('fonts/DelaGothicOne.ttf')})`),
+    ];
+    Promise.all(faces.map((ff) => ff.load())).then((loaded) => {
+      loaded.forEach((ff) => document.fonts.add(ff));
+      continueRender(handle);
+    });
   }, [handle]);
 };
 
@@ -364,10 +373,10 @@ export const Reel = () => {
         return (
           <Sequence key={s.id} from={s.from} durationInFrames={s.frames} name={s.id}>
             <Shot dur={s.frames}>
-              {s.title?.length > 0 && s.id !== 'versus' && <KineticTitle lines={s.title} dur={s.frames} size={170} y={TITLE_Y} fx={s.id === 'plan' ? 'drop' : 'zoom'} />}
+              {s.title?.length > 0 && s.id !== 'versus' && <KineticTitle lines={s.title} dur={s.frames} size={170} y={TITLE_Y} fx={s.id === 'plan' ? 'drop' : 'zoom'} neon={PALETTES[s.id][0]} />}
               <Body dur={s.frames} />
             </Shot>
-            {s.id !== 'tg' && <Captions words={s.words} wordStarts={s.wordStarts} voiceFrom={s.voiceFrom} frames={s.mouth.length} side={stage.side} />}
+            {s.id !== 'tg' && <Captions words={s.words} wordStarts={s.wordStarts} voiceFrom={s.voiceFrom} frames={s.mouth.length} side={stage.side} neon={PALETTES[s.id][0]} />}
             <Narrator mouth={s.mouth} voiceFrom={s.voiceFrom} side={stage.side} enter={stage.enter} point={stage.point} />
             <Flash />
             <Html5Audio src={staticFile('sfx/whoosh.wav')} volume={0.5} />

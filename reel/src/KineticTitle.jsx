@@ -1,4 +1,5 @@
 import { useCurrentFrame, useVideoConfig, spring, interpolate, Easing, random } from 'remotion';
+import { NEON, chromeFill, chromeShadow, neonText } from './style.js';
 
 // Alternating size multipliers so neighbouring letters differ in scale.
 const SIZE = [1, 1.16, 0.9, 1.08, 0.95, 1.12];
@@ -17,10 +18,11 @@ const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' };
  *     'zoom'  — letters fly in from the camera, blurred
  *     'glitch'— RGB-split jitter that settles
  *     'wave'  — rise from below on a sine wave
- * Every letter keeps a subtle idle wobble; highlighted words (*word*) get a moving gradient.
+ * Every letter keeps a subtle idle wobble. Plain words are liquid chrome with a neon rim;
+ * highlighted words (*word*) are neon tubes that flicker on.
  * Exit always slices letters apart.
  */
-export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, exitAt, y = 0, fx = 'slice', stagger = 1.7, color = '#fff', hl = ['#FFE14D', '#FF8A00'], charW = 1.08 }) => {
+export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, exitAt, y = 0, fx = 'slice', stagger = 1.7, color = 'chrome', neon = NEON.pink, charW = 1.08 }) => {
   const frame = useCurrentFrame() - delay;
   const { fps } = useVideoConfig();
   const exitStart = exitAt ?? dur - 12;
@@ -36,7 +38,8 @@ export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, ex
         return (
           <div key={li} style={{ display: 'flex', gap: fs * 0.32, alignItems: 'flex-end', lineHeight: 0.92 }}>
             {words.map((w, wi) => (
-              <div key={wi} style={{ display: 'flex' }}>
+              // one filter per word instead of per letter: much cheaper to rasterise
+              <div key={wi} style={{ display: 'flex', filter: w.hl ? 'drop-shadow(0 18px 24px rgba(0,0,0,.55))' : chromeShadow(neon) }}>
                 {[...w.text].map((ch, ci) => {
                   const i = idx++;
                   const local = frame - i * stagger;
@@ -69,16 +72,12 @@ export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, ex
                   }
                   cut += out * 120;
 
-                  const fill = w.hl
-                    ? { backgroundImage: `linear-gradient(${100 + frame * 4}deg, ${hl[0]} 20%, #fff 45%, ${hl[0]} 60%, ${hl[1]} 100%)`, backgroundSize: '200% 100%', backgroundPosition: `${(frame * 3 + i * 20) % 200}% 0`, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }
-                    : { color };
-                  const base = {
-                    fontFamily: 'Unbounded', fontWeight: 900, fontSize: fs * mult, whiteSpace: 'pre',
-                    WebkitTextStroke: '0px', ...fill,
-                  };
-                  const shadow = w.hl
-                    ? `drop-shadow(0 6px 0 #C2410C) drop-shadow(0 10px 0 #7C2D12) drop-shadow(0 22px 30px rgba(0,0,0,.55))`
-                    : `drop-shadow(0 6px 0 rgba(0,0,0,.3)) drop-shadow(0 20px 30px rgba(0,0,0,.55))`;
+                  // neon tubes flicker on before settling
+                  const flick = w.hl && local < 14 ? (random(`f${i}${Math.floor(local)}`) > 0.45 ? 1 : 0.25) : 1;
+                  const hum = 0.92 + Math.sin(frame / 3 + i) * 0.08;
+                  const sweep = ((frame * 2.4 - i * 7) % 240) - 60;
+                  const fill = w.hl ? neonText(neon, hum) : color === 'chrome' ? chromeFill(sweep) : { color };
+                  const base = { fontFamily: 'Dela', fontSize: fs * mult, whiteSpace: 'pre', ...fill };
                   const half = (top) => (
                     <span
                       style={{
@@ -92,19 +91,19 @@ export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, ex
                     </span>
                   );
                   const ghost = (c, dx) => (
-                    <span style={{ ...base, color: c, backgroundImage: 'none', position: 'absolute', left: dx, top: 0, mixBlendMode: 'screen', opacity: 0.85 }}>{ch}</span>
+                    <span style={{ ...base, color: c, backgroundImage: 'none', WebkitTextStroke: 0, textShadow: 'none', position: 'absolute', left: dx, top: 0, mixBlendMode: 'screen', opacity: 0.85 }}>{ch}</span>
                   );
                   return (
                     <span
                       key={ci}
                       style={{
-                        position: 'relative', display: 'inline-block', filter: `${shadow} blur(${blur}px)`,
+                        position: 'relative', display: 'inline-block', filter: blur > 0.3 ? `blur(${blur}px)` : 'none',
                         transform: `translate(${tx}px, ${ty + wob}px) rotate(${rot + tilt}deg) scale(${sc}) scaleX(${sx}) scaleY(${sy})`,
-                        opacity: op * (1 - out), transformOrigin: '50% 90%',
+                        opacity: op * (1 - out) * flick, transformOrigin: '50% 90%',
                       }}
                     >
-                      {split > 0.5 && ghost('#ff0050', -split)}
-                      {split > 0.5 && ghost('#00e5ff', split)}
+                      {split > 0.5 && ghost(NEON.pink, -split)}
+                      {split > 0.5 && ghost(NEON.cyan, split)}
                       {half(true)}
                       {half(false)}
                     </span>
@@ -119,20 +118,21 @@ export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, ex
   );
 };
 
-/** Rolling number counter (slot-machine digits). */
-export const Counter = ({ from, to, start, len, size = 300, prefix = '', color = '#fff' }) => {
+/** Rolling number counter (slot-machine digits), chrome or neon. */
+export const Counter = ({ from, to, start, len, size = 300, prefix = '', neon = NEON.pink, tube = false }) => {
   const frame = useCurrentFrame();
   const t = interpolate(frame, [start, start + len], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const v = Math.round(from + (to - from) * t);
   const done = frame >= start + len;
   const { fps } = useVideoConfig();
   const pop = spring({ frame: frame - start - len, fps, config: { damping: 6, stiffness: 260 } });
+  const sweep = ((frame * 2.4) % 240) - 60;
   return (
     <div
       style={{
-        fontFamily: 'Unbounded', fontWeight: 900, fontSize: size, color, lineHeight: 1,
+        fontFamily: 'Dela', fontSize: size, lineHeight: 1, ...(tube ? neonText(neon, 1.2) : chromeFill(sweep)),
         transform: `scale(${done ? 1 + (1 - pop) * 0.6 : 1}) rotate(${done ? (1 - pop) * -8 : Math.sin(frame) * 2}deg)`,
-        filter: 'drop-shadow(0 10px 0 rgba(0,0,0,.35)) drop-shadow(0 30px 40px rgba(0,0,0,.5))',
+        filter: tube ? 'drop-shadow(0 20px 30px rgba(0,0,0,.5))' : chromeShadow(neon),
       }}
     >
       {prefix}{v}
