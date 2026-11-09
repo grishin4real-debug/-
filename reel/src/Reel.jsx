@@ -105,9 +105,9 @@ const Hook = ({ dur }) => (
   </Shake>
 );
 
-const Plan = () => (
+const Plan = ({ dur }) => (
   <ScreenCam
-    src="clips/plan.mp4" top={MEDIA_TOP} neon={NEON.cyan}
+    src="clips/plan.mp4" top={MEDIA_TOP} neon={NEON.cyan} dur={dur} fit={6.6}
     cam={[
       { t: 0, x: 677, y: 420, s: 1.12 }, { t: 1.6, x: 677, y: 440, s: 1.25 },
       { t: 3.2, x: 677, y: 470, s: 2.1 }, { t: 5, x: 677, y: 560, s: 2.6 }, { t: 7.5, x: 677, y: 560, s: 2.6 },
@@ -117,12 +117,12 @@ const Plan = () => (
   />
 );
 
-const Coupon = ({ dur }) => {
-  const at = Math.round(dur - 95);
+const Coupon = ({ dur, cue }) => {
+  const at = cue('минус', 0, dur - 50);
   return (
     <Shake at={[at]}>
       <ScreenCam
-        src="clips/coupon.mp4" top={MEDIA_TOP} neon={NEON.lime}
+        src="clips/coupon.mp4" top={MEDIA_TOP} neon={NEON.lime} dur={dur} fit={11.5}
         cam={[
           { t: 0, x: 430, y: 430, s: 1.4 }, { t: 1.2, x: 430, y: 440, s: 2.1 }, { t: 6, x: 435, y: 450, s: 2.2 },
           { t: 8.6, x: 420, y: 360, s: 1.6 }, { t: 10.2, x: 340, y: 300, s: 2.2 }, { t: 12, x: 330, y: 240, s: 2.6 },
@@ -132,7 +132,7 @@ const Coupon = ({ dur }) => {
       />
       <Sequence from={at} layout="none">
         <div style={{ position: 'absolute', inset: 0, transform: 'rotate(-6deg)' }}>
-          <KineticTitle lines={[['*−100%*']]} dur={95} size={230} y={MEDIA_TOP + 520} fx="glitch" stagger={1.2} />
+          <KineticTitle lines={[['*−100%*']]} dur={dur - at} size={230} y={MEDIA_TOP + 520} fx="glitch" stagger={1.2} />
         </div>
       </Sequence>
       <Boom at={at} />
@@ -141,14 +141,18 @@ const Coupon = ({ dur }) => {
   );
 };
 
-const Zero = ({ dur }) => {
+const Zero = ({ dur, cue }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const strike = interpolate(f, [26, 40], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
-  const old = spring({ frame: f - 6, fps, config: { damping: 12 } });
+  // beats follow the narration: "Стало" → counter, "ноль" → boom, "первый/второй/третий" → month cards
+  const start = cue('стало', 0, 30);
+  const hit = Math.max(start + 10, cue('ноль', 0, start + 20));
+  const pops = [cue('первый', 0, hit + 10), cue('второй', 0, hit + 22), cue('третий', 0, hit + 34)];
+  const strike = interpolate(f, [start - 14, start], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const old = spring({ frame: f - 2, fps, config: { damping: 12 } });
   const months = ['МЕС 1', 'МЕС 2', 'МЕС 3'];
   return (
-    <Shake at={[72]}>
+    <Shake at={[hit]}>
       <KineticTitle lines={[['ЦЕНА']]} dur={dur} size={170} y={TITLE_Y} fx="glitch" />
       {/* old price with drawn strike-through */}
       <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP - 70, display: 'flex', justifyContent: 'center', transform: `scale(${old}) rotate(-4deg)` }}>
@@ -158,12 +162,12 @@ const Zero = ({ dur }) => {
         </div>
       </div>
       <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP + 110, display: 'flex', justifyContent: 'center' }}>
-        <Counter from={20} to={0} start={44} len={28} size={370} prefix="$" neon={NEON.gold} />
+        <Counter from={20} to={0} start={start} len={hit - start} size={370} prefix="$" neon={NEON.gold} />
       </div>
       {/* three month stamps */}
       <div style={{ position: 'absolute', left: 0, right: 0, top: MEDIA_TOP + 510, display: 'flex', justifyContent: 'center', gap: 34 }}>
         {months.map((m, i) => {
-          const p = spring({ frame: f - 90 - i * 8, fps, config: { damping: 8, stiffness: 180 } });
+          const p = spring({ frame: f - pops[i], fps, config: { damping: 8, stiffness: 180 } });
           return (
             <div key={m} style={{ width: 260, height: 150, ...glass(NEON.lime, 30), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transform: `scale(${p}) rotate(${(1 - p) * 40 + (i - 1) * 5}deg)` }}>
               <div style={{ fontFamily: 'Unbounded', fontWeight: 700, fontSize: 28, color: 'rgba(255,255,255,.75)', letterSpacing: 3 }}>{m}</div>
@@ -172,23 +176,23 @@ const Zero = ({ dur }) => {
           );
         })}
       </div>
-      <Boom at={72} />
-      <Confetti at={72} y={MEDIA_TOP + 400} n={90} power={1.2} />
-      {months.map((_, i) => (
-        <Sequence key={i} from={90 + i * 8} durationInFrames={10} layout="none"><Html5Audio src={staticFile('sfx/tick.wav')} /></Sequence>
+      <Boom at={hit} />
+      <Confetti at={hit} y={MEDIA_TOP + 400} n={90} power={1.2} />
+      {pops.map((p, i) => (
+        <Sequence key={i} from={p} durationInFrames={10} layout="none"><Html5Audio src={staticFile('sfx/tick.wav')} /></Sequence>
       ))}
     </Shake>
   );
 };
 
-const Inside = ({ dur }) => {
+const Inside = ({ dur, cue }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
   const cards = [
     ['ИГРЫ', NEON.pink], ['САЙТЫ', NEON.cyan],
     ['ВИДЕО', NEON.gold], ['ДИЗАЙН', NEON.lime],
   ];
-  const meta = Math.round(dur - 120);
+  const meta = cue('этот', 0, dur - 60);
   return (
     <>
       <KineticTitle lines={[['ЧТО'], ['*ВНУТРИ?*']]} dur={dur} size={170} y={TITLE_Y} fx="wave" neon={NEON.violet} />
@@ -217,7 +221,7 @@ const Inside = ({ dur }) => {
       </div>
       <Sequence from={meta} layout="none">
         <div style={{ position: 'absolute', inset: 0, transform: 'rotate(-4deg)' }}>
-          <KineticTitle lines={[['ЭТОТ', 'РОЛИК'], ['*ТОЖЕ*', 'ОН!']]} dur={120} size={150} y={MEDIA_TOP + 180} fx="drop" stagger={1.6} />
+          <KineticTitle lines={[['ЭТОТ', 'РОЛИК'], ['*ТОЖЕ*', 'ОН!']]} dur={dur - meta} size={150} y={MEDIA_TOP + 180} fx="drop" stagger={1.6} />
         </div>
         <Html5Audio src={staticFile('sfx/ding.wav')} volume={0.7} />
       </Sequence>
@@ -225,11 +229,11 @@ const Inside = ({ dur }) => {
   );
 };
 
-const Versus = ({ dur }) => {
+const Versus = ({ dur, cue }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
   const a = spring({ frame: f - 6, fps, config: { damping: 14 } });
-  const reveal = 70;
+  const reveal = cue('а', 0, 70);
   const b = spring({ frame: f - reveal, fps, config: { damping: 14 } });
   const kb = interpolate(f, [reveal, dur], [1.1, 1.25]);
   const venom = interpolate(f, [reveal + 70, reveal + 82], [0, 1], clamp);
@@ -269,11 +273,13 @@ const TgLogo = ({ size }) => (
   </svg>
 );
 
-const Tg = ({ dur }) => {
+const Tg = ({ dur, cue }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
   const logo = spring({ frame: f - 8, fps, config: { damping: 7, stiffness: 140 } });
-  const clickAt = 150;
+  const clickAt = cue('подписывайся', 0, 120);
+  const linkAt = cue('ссылка', 0, clickAt + 30);
+  const c = clickAt / fps;
   const clicked = f >= clickAt;
   const btn = spring({ frame: f - 40, fps, config: { damping: 9, stiffness: 160 } });
   const btnPop = spring({ frame: f - clickAt, fps, config: { damping: 5, stiffness: 300 } });
@@ -287,7 +293,7 @@ const Tg = ({ dur }) => {
   const trail = [];
   for (let k = Math.max(20, f - 40); k <= Math.min(f, 80); k += 2) trail.push(planeAt(k));
   const [px, py] = planeAt(Math.min(f, 80));
-  const cur = [{ t: 0, x: 1200, y: 1700 }, { t: 3.2, x: 1200, y: 1700 }, { t: 4.8, x: 600, y: MEDIA_TOP + 590 }, { t: 7, x: 640, y: MEDIA_TOP + 620 }];
+  const cur = [{ t: 0, x: 1200, y: 1700 }, { t: Math.max(0.1, c - 1.1), x: 1200, y: 1700 }, { t: c - 0.08, x: 600, y: MEDIA_TOP + 590 }, { t: c + 2, x: 640, y: MEDIA_TOP + 620 }];
   const press = Math.max(0, 1 - Math.abs(f - clickAt) / 6);
 
   return (
@@ -331,13 +337,22 @@ const Tg = ({ dur }) => {
         <Html5Audio src={staticFile('sfx/click.wav')} volume={0.7} />
         <Html5Audio src={staticFile('sfx/ding.wav')} volume={0.8} />
       </Sequence>
-      <Sequence from={clickAt + 30} layout="none">
+      <Sequence from={linkAt} layout="none">
         <div style={{ position: 'absolute', inset: 0, transform: 'translateX(150px)' }}>
-          <KineticTitle lines={[['ССЫЛКА', 'В'], ['*ОПИСАНИИ*']]} dur={dur - clickAt - 30} size={64} y={MEDIA_TOP + 720} fx="zoom" stagger={1.2} neon={NEON.cyan} />
+          <KineticTitle lines={[['ССЫЛКА', 'В'], ['*ОПИСАНИИ*']]} dur={dur - linkAt} size={64} y={MEDIA_TOP + 720} fx="zoom" stagger={1.2} neon={NEON.cyan} />
         </div>
       </Sequence>
     </Shake>
   );
+};
+
+/** cue('слово', nth, fallback) → scene frame where that spoken word starts. */
+const makeCue = (s) => (word, nth = 0, fallback = 0) => {
+  const norm = (w) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  for (let i = 0, c = 0; i < s.words.length; i++) {
+    if (norm(s.words[i]) === word && c++ === nth) return Math.round(s.voiceFrom + s.wordStarts[i]);
+  }
+  return fallback;
 };
 
 const BODIES = { hook: Hook, plan: Plan, coupon: Coupon, zero: Zero, inside: Inside, versus: Versus, tg: Tg };
@@ -374,7 +389,7 @@ export const Reel = () => {
           <Sequence key={s.id} from={s.from} durationInFrames={s.frames} name={s.id}>
             <Shot dur={s.frames}>
               {s.title?.length > 0 && s.id !== 'versus' && <KineticTitle lines={s.title} dur={s.frames} size={170} y={TITLE_Y} fx={s.id === 'plan' ? 'drop' : 'zoom'} neon={PALETTES[s.id][0]} />}
-              <Body dur={s.frames} />
+              <Body dur={s.frames} cue={makeCue(s)} />
             </Shot>
             {s.id !== 'tg' && <Captions words={s.words} wordStarts={s.wordStarts} voiceFrom={s.voiceFrom} frames={s.mouth.length} side={stage.side} neon={PALETTES[s.id][0]} />}
             <Narrator mouth={s.mouth} voiceFrom={s.voiceFrom} side={stage.side} enter={stage.enter} point={stage.point} />

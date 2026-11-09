@@ -87,6 +87,59 @@ def piper(text, out):
     return None
 
 
+def tighten(path, max_gap=0.09, thresh=0.012):
+    """Shortens every silence longer than max_gap (s) and trims both ends.
+
+    Rewrites the wav in place and returns a function mapping old times to new
+    ones. Idempotent: a second pass finds nothing to cut and maps identically.
+    """
+    with wave.open(str(path)) as w:
+        sr = w.getframerate()
+        pcm = array.array("h", w.readframes(w.getnframes()))
+    win = sr // 100  # 10 ms
+    loud = []
+    for i in range(0, len(pcm), win):
+        chunk = pcm[i:i + win]
+        loud.append(math.sqrt(sum(x * x for x in chunk) / max(1, len(chunk))) / 32768 > thresh)
+    keep = int(max_gap * 100)
+    spans, i, n = [], 0, len(loud)
+    while i < n:  # kept [start, end) in windows
+        j = i
+        while j < n and loud[j] == loud[i]:
+            j += 1
+        if loud[i]:
+            spans.append((i, j))
+        else:
+            edge = i == 0 or j == n
+            k = 1 if edge else keep  # trim ends almost fully
+            if j - i <= k:
+                spans.append((i, j))
+            else:
+                h = k // 2
+                if i > 0:
+                    spans.append((i, i + h))
+                if j < n:
+                    spans.append((j - (k - h), j))
+        i = j
+    out = array.array("h")
+    table = []  # (old_start_s, old_end_s, new_start_s)
+    for a, b in spans:
+        table.append((a / 100, b / 100, len(out) / sr))
+        out.extend(pcm[a * win:b * win])
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(out.tobytes())
+
+    def remap(t):
+        for a, b, ns in table:
+            if t < b:
+                return ns + max(0.0, t - a)
+        return len(out) / sr
+    return remap
+
+
 scenes = []
 for s in script["scenes"]:
     out = voice_dir / f"{s['id']}.wav"
@@ -103,6 +156,14 @@ for s in script["scenes"]:
     else:
         word_t = piper(s["say"], out)
         meta.unlink(missing_ok=True)
+
+    remap = tighten(out, float(script.get("maxGap", 0.09)))
+    if word_t:
+        word_t = [round(remap(t), 4) for t in word_t]
+        if meta.exists():
+            m = json.loads(meta.read_text(encoding="utf-8"))
+            m["words"] = word_t
+            meta.write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
 
     with wave.open(str(out)) as w:
         sr = w.getframerate()
@@ -128,7 +189,7 @@ for s in script["scenes"]:
             starts.append(round(a + (acc / tot) * (b - a), 1))
             acc += wgt
 
-    lead, tail = 6, int(script.get("tailFrames", 10))
+    lead, tail = int(script.get("leadFrames", 3)), int(script.get("tailFrames", 4))
     scenes.append({
         "id": s["id"],
         "title": s.get("title", []),
@@ -144,7 +205,7 @@ for s in script["scenes"]:
 total = sum(s["frames"] for s in scenes)
 meta = {k: script[k] for k in ("telegram",) if k in script}
 (ROOT / "src" / "timeline.json").write_text(
-    json.dumps({"fps": FPS, "total": total, "voiceBackend": "elevenlabs" if XI_KEY else "piper", **meta, "scenes": scenes}, ensure_ascii=False),
+    json.dumps({"fps": FPS, "total": total, "voiceBackend": "elevenlabs" if XI_KEY or all((voice_dir / f"{x['id']}.json").exists() for x in script["scenes"]) else "piper", **meta, "scenes": scenes}, ensure_ascii=False),
     encoding="utf-8",
 )
 print(f"backend {'elevenlabs' if XI_KEY else 'piper'}; total {total} frames = {total / FPS:.1f}s")

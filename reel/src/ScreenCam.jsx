@@ -45,10 +45,12 @@ export const Ripple = ({ x, y, age }) => {
  * cam: [{t, x, y, s}] — focus point in source px and absolute scale.
  * cursor: [{t, x, y}] in source px; clicks: [{t, x, y}].
  */
-export const ScreenCam = ({ src, cam, cursor, clicks = [], top = 640, w = 1000, h = 800, delay = 0, neon = '#22e6ff' }) => {
+// fit: seconds of the clip to show within dur frames (speeds the recording up to match the voice)
+export const ScreenCam = ({ src, cam, cursor, clicks = [], top = 640, w = 1000, h = 800, delay = 0, neon = '#22e6ff', dur, fit }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const t = Math.max(0, (frame - delay) / fps);
+  const speed = fit && dur ? Math.max(1, fit / (dur / fps)) : 1;
+  const t = Math.max(0, ((frame - delay) / fps) * speed);
 
   const s = track(cam, t, 's');
   let tx = w / 2 - track(cam, t, 'x') * s;
@@ -97,7 +99,7 @@ export const ScreenCam = ({ src, cam, cursor, clicks = [], top = 640, w = 1000, 
           }}
         >
           <div style={{ position: 'absolute', left: tx, top: ty, width: SRC_W, height: SRC_H, transform: `scale(${s})`, transformOrigin: '0 0' }}>
-            <OffthreadVideo src={staticFile(src)} muted style={{ width: SRC_W, height: SRC_H }} />
+            <OffthreadVideo src={staticFile(src)} muted playbackRate={speed} style={{ width: SRC_W, height: SRC_H }} />
           </div>
           {clicks.map((c, i) => {
             const [x, y] = toScreen(c.x, c.y);
@@ -107,7 +109,7 @@ export const ScreenCam = ({ src, cam, cursor, clicks = [], top = 640, w = 1000, 
         </div>
       </div>
       {clicks.map((c, i) => (
-        <Sequence key={i} from={Math.round(delay + c.t * fps)} durationInFrames={10} layout="none">
+        <Sequence key={i} from={Math.round(delay + (c.t / speed) * fps)} durationInFrames={10} layout="none">
           <Html5Audio src={staticFile('sfx/click.wav')} volume={0.5} />
         </Sequence>
       ))}
