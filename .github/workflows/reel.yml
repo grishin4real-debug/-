@@ -28,7 +28,10 @@ jobs:
       - name: System deps
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Narrator voice (piper TTS)
+      - name: Narrator voice (ElevenLabs if the secret is set, otherwise piper TTS)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID }}
         run: |
           pip install piper-tts==1.8.0
           mkdir -p ~/piper

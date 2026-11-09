@@ -1,40 +1,97 @@
-"""Generates narrator voice-over + mouth envelope + SFX for the reel.
+"""Generates narrator voice-over, word timings, mouth envelope and SFX for the reel.
 
-Requires: piper (pip install piper-tts), a Russian piper voice, ffmpeg.
-Usage: python3 scripts/voice.py <piper-binary> <voice.onnx>
+Voice backends:
+  * ElevenLabs — used when ELEVENLABS_API_KEY is set. Voice: ELEVENLABS_VOICE_ID
+    (pick an energetic cartoon voice in the Voice Library), model: ELEVENLABS_MODEL_ID.
+    Word timings come from the /with-timestamps alignment.
+  * piper (offline fallback) — usage: python3 scripts/voice.py <piper-binary> <voice.onnx>
+
 Writes public/voice/*.wav and src/timeline.json.
 """
 import array
+import base64
 import json
 import math
+import os
 import pathlib
+import re
 import subprocess
 import sys
+import urllib.request
 import wave
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FPS = 30
-PIPER, MODEL = sys.argv[1], sys.argv[2]
 script = json.loads((ROOT / "script.json").read_text(encoding="utf-8"))
+XI_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+XI_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "")
+XI_MODEL = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+if XI_KEY and not XI_VOICE:
+    sys.exit("ELEVENLABS_VOICE_ID is required when ELEVENLABS_API_KEY is set")
+if not XI_KEY and len(sys.argv) < 3:
+    sys.exit("usage: voice.py <piper-binary> <voice.onnx>  (or set ELEVENLABS_API_KEY)")
 
 voice_dir = ROOT / "public" / "voice"
 voice_dir.mkdir(parents=True, exist_ok=True)
+
+
+def ffmpeg(*args):
+    subprocess.run(["ffmpeg", "-v", "error", "-y", *args], check=True)
+
+
+def elevenlabs(text, out):
+    """Returns word start times (seconds) taken from the character alignment."""
+    req = urllib.request.Request(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{XI_VOICE}/with-timestamps?output_format=pcm_44100",
+        data=json.dumps({
+            "text": text,
+            "model_id": XI_MODEL,
+            "voice_settings": {"stability": 0.3, "similarity_boost": 0.8, "style": 0.7, "use_speaker_boost": True, "speed": 1.1},
+        }).encode(),
+        headers={"xi-api-key": XI_KEY, "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        data = json.load(r)
+    pcm = base64.b64decode(data["audio_base64"])
+    raw = out.with_suffix(".raw.wav")
+    with wave.open(str(raw), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(44100)
+        w.writeframes(pcm)
+    ffmpeg("-i", str(raw), "-af", "loudnorm=I=-14:TP=-1.5", "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", str(out))
+    raw.unlink()
+    al = data.get("alignment") or {}
+    chars, starts = al.get("characters", []), al.get("character_start_times_seconds", [])
+    words, prev_space = [], True
+    for ch, st in zip(chars, starts):
+        if ch.isspace():
+            prev_space = True
+        elif prev_space:
+            words.append(st)
+            prev_space = False
+    return words
+
+
+def piper(text, out):
+    raw = out.with_suffix(".raw.wav")
+    subprocess.run(
+        [sys.argv[1], "-m", sys.argv[2], "-f", str(raw), "--length-scale", str(script.get("lengthScale", 0.85))],
+        input=text.encode("utf-8"), check=True, capture_output=True,
+    )
+    # higher, faster, punchier "cartoon kid" delivery
+    ffmpeg("-i", str(raw), "-af",
+           "asetrate=22050*1.22,aresample=44100,atempo=0.92,"
+           "acompressor=threshold=-20dB:ratio=4:attack=3:release=60,loudnorm=I=-14:TP=-1.5",
+           "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", str(out))
+    raw.unlink()
+    return None
+
+
 scenes = []
 for s in script["scenes"]:
-    raw = voice_dir / f"{s['id']}.raw.wav"
     out = voice_dir / f"{s['id']}.wav"
-    subprocess.run(
-        [PIPER, "-m", MODEL, "-f", str(raw), "--length-scale", str(script.get("lengthScale", 0.9))],
-        input=s["say"].encode("utf-8"), check=True, capture_output=True,
-    )
-    # slightly higher, punchier "cartoon" voice
-    subprocess.run([
-        "ffmpeg", "-v", "error", "-y", "-i", str(raw),
-        "-af", "asetrate=22050*1.08,aresample=44100,atempo=0.96,"
-               "acompressor=threshold=-18dB:ratio=3:attack=5:release=80,loudnorm=I=-15:TP=-1.5",
-        "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", str(out),
-    ], check=True)
-    raw.unlink()
+    word_t = elevenlabs(s["say"], out) if XI_KEY else piper(s["say"], out)
 
     with wave.open(str(out)) as w:
         sr = w.getframerate()
@@ -43,15 +100,30 @@ for s in script["scenes"]:
     env = []
     for i in range(0, len(pcm), hop):
         chunk = pcm[i:i + hop]
-        rms = math.sqrt(sum(x * x for x in chunk) / max(1, len(chunk))) / 32768
-        env.append(rms)
+        env.append(math.sqrt(sum(x * x for x in chunk) / max(1, len(chunk))) / 32768)
     peak = max(env) or 1
     mouth = [round(min(1.0, (e / peak) * 1.6), 3) for e in env]
-    lead, tail = 8, int(script.get("tailFrames", 14))
+
+    words = [w for w in re.split(r"\s+", s["say"].replace("—", " ")) if w]
+    if word_t and len(word_t) >= len(words):
+        starts = [round(t * FPS, 1) for t in word_t[:len(words)]]
+    else:
+        # estimate: spread words over the voiced span proportionally to their length
+        voiced = [i for i, m in enumerate(mouth) if m > 0.12]
+        a, b = (voiced[0], voiced[-1]) if voiced else (0, len(mouth))
+        weights = [len(w) + 2 for w in words]
+        tot, acc, starts = sum(weights), 0, []
+        for wgt in weights:
+            starts.append(round(a + (acc / tot) * (b - a), 1))
+            acc += wgt
+
+    lead, tail = 6, int(script.get("tailFrames", 10))
     scenes.append({
         "id": s["id"],
         "title": s.get("title", []),
         "say": s["say"],
+        "words": words,
+        "wordStarts": starts,
         "voice": f"voice/{s['id']}.wav",
         "voiceFrom": lead,
         "frames": lead + len(mouth) + tail + int(s.get("extraFrames", 0)),
@@ -59,17 +131,24 @@ for s in script["scenes"]:
     })
 
 total = sum(s["frames"] for s in scenes)
-(ROOT / "src" / "timeline.json").write_text(json.dumps({"fps": FPS, "total": total, "scenes": scenes}), encoding="utf-8")
-print(f"total {total} frames = {total / FPS:.1f}s")
+meta = {k: script[k] for k in ("telegram",) if k in script}
+(ROOT / "src" / "timeline.json").write_text(
+    json.dumps({"fps": FPS, "total": total, "voiceBackend": "elevenlabs" if XI_KEY else "piper", **meta, "scenes": scenes}, ensure_ascii=False),
+    encoding="utf-8",
+)
+print(f"backend {'elevenlabs' if XI_KEY else 'piper'}; total {total} frames = {total / FPS:.1f}s")
 for s in scenes:
     print(f"  {s['id']:8s} {s['frames'] / FPS:5.1f}s")
 
 # --- SFX, synthesised so there are no licensing questions ---
 sfx = ROOT / "public" / "sfx"
 sfx.mkdir(exist_ok=True)
-def ff(args, name):
-    subprocess.run(["ffmpeg", "-v", "error", "-y", *args, "-ar", "44100", "-ac", "2", str(sfx / name)], check=True)
-ff(["-f", "lavfi", "-i", "anoisesrc=d=0.45:c=pink:a=0.6",
-    "-af", "highpass=f=300,lowpass=f=6000,afade=t=in:d=0.25:curve=exp,afade=t=out:st=0.25:d=0.2,volume=0.7"], "whoosh.wav")
-ff(["-f", "lavfi", "-i", "sine=f=2400:d=0.03", "-af", "afade=t=out:d=0.03,volume=0.8"], "click.wav")
-ff(["-f", "lavfi", "-i", "sine=f=90:d=0.5", "-af", "asetrate=44100*1.0,afade=t=out:st=0.05:d=0.45:curve=exp,volume=2.2"], "boom.wav")
+def gen(args, name):
+    ffmpeg(*args, "-ar", "44100", "-ac", "2", str(sfx / name))
+gen(["-f", "lavfi", "-i", "anoisesrc=d=0.45:c=pink:a=0.6",
+     "-af", "highpass=f=300,lowpass=f=6000,afade=t=in:d=0.25:curve=exp,afade=t=out:st=0.25:d=0.2,volume=0.7"], "whoosh.wav")
+gen(["-f", "lavfi", "-i", "sine=f=2400:d=0.03", "-af", "afade=t=out:d=0.03,volume=0.8"], "click.wav")
+gen(["-f", "lavfi", "-i", "sine=f=90:d=0.5", "-af", "afade=t=out:st=0.05:d=0.45:curve=exp,volume=2.2"], "boom.wav")
+gen(["-f", "lavfi", "-i", "sine=f=1318:d=0.12", "-f", "lavfi", "-i", "sine=f=1976:d=0.35",
+     "-filter_complex", "[0]afade=t=out:d=0.12[a];[1]adelay=90|90,afade=t=out:st=0.1:d=0.35[b];[a][b]amix=2,volume=1.4"], "ding.wav")
+gen(["-f", "lavfi", "-i", "sine=f=660:d=0.06", "-af", "afade=t=out:d=0.06,volume=0.35"], "tick.wav")

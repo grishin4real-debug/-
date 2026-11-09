@@ -1,68 +1,115 @@
-import { useCurrentFrame, spring, useVideoConfig } from 'remotion';
+import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
 
 /**
- * Original yellow cartoon narrator (Springfield-style palette, own design).
- * mouth: per-frame openness array (0..1) aligned to the voice track.
+ * Original hyperactive cartoon kid narrator (yellow-skin TV-cartoon style, own design —
+ * not a copy of any existing character). Lip-synced via `mouth` envelope.
+ * side: 'left' | 'right'; enter: 'skate' | 'jump'.
  */
-export const Narrator = ({ mouth, voiceFrom, lookX = 1 }) => {
+export const Narrator = ({ mouth, voiceFrom, side = 'left', enter = 'jump', point = false }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const vi = frame - voiceFrom;
-  const m = vi >= 0 && vi < mouth.length ? mouth[vi] : 0;
-  const pop = spring({ frame, fps, config: { damping: 9, stiffness: 140 } });
   const talk = vi >= 0 && vi < mouth.length;
-  const bob = Math.sin(frame / 6) * (talk ? 6 : 2) + m * 8;
-  const blink = frame % 95 > 90 ? 0.1 : 1;
-  const arm = talk ? Math.sin(frame / 7) * 14 - 10 : -4;
-  const brow = m * 7;
+  const m = talk ? mouth[vi] : 0;
+  const prevM = talk && vi > 2 ? mouth[vi - 3] : 0;
+  const accent = Math.max(0, m - prevM); // syllable onsets drive extra bounce
+
+  const inn = spring({ frame, fps, config: { damping: enter === 'skate' ? 14 : 8, stiffness: 120 } });
+  const dir = side === 'left' ? 1 : -1;
+  const enterX = enter === 'skate' ? (1 - inn) * -700 * dir : 0;
+  const enterY = enter === 'jump' ? (1 - inn) * 600 : 0;
+
+  // squash & stretch body bounce
+  const hop = Math.abs(Math.sin(frame / 5)) * (talk ? 14 : 4) + accent * 60;
+  const squash = 1 + Math.sin(frame / 2.5) * (talk ? 0.025 : 0.01) + accent * 0.25;
+  const lean = Math.sin(frame / 9) * (talk ? 5 : 2) + accent * 8 * dir;
+  const blink = frame % 70 > 66 ? 0.1 : 1;
+  const armA = point ? -125 + Math.sin(frame / 6) * 8 : talk ? -40 + Math.sin(frame / 4) * 35 : -10;
+  const armB = talk ? 20 + Math.sin(frame / 5 + 1) * 25 : 10;
+  const brow = m * 10 + accent * 20;
+  const pupil = Math.sin(frame / 23) * 6;
+
   const SK = '#FFD90F';
-  const OL = '#1b1b1b';
+  const OL = '#161616';
+  const SHIRT = '#22C55E';
 
   return (
     <svg
-      width="400" height="470" viewBox="0 0 400 470"
-      style={{ position: 'absolute', left: -10, bottom: -20, transform: `translateY(${(1 - pop) * 400 + bob}px)`, overflow: 'visible' }}
+      width="420" height="560" viewBox="-40 -40 420 560"
+      style={{
+        position: 'absolute', [side]: -20, bottom: -40, overflow: 'visible',
+        transform: `translate(${enterX}px, ${enterY - hop}px) scaleX(${dir}) rotate(${lean}deg) scale(${2 - squash}, ${squash})`,
+        transformOrigin: '50% 100%',
+      }}
     >
-      {/* body: red hoodie */}
-      <path d="M70 470 C70 360 110 320 200 320 C290 320 330 360 330 470 Z" fill="#D7263D" stroke={OL} strokeWidth="5" />
-      <path d="M150 330 Q200 372 250 330" fill="none" stroke={OL} strokeWidth="5" />
-      {/* tiny spider logo */}
-      <g transform="translate(200 410)" stroke="#fff" strokeWidth="4" strokeLinecap="round">
-        <ellipse rx="9" ry="14" fill="#fff" stroke="none" />
-        <path d="M-6 -6 L-28 -22 M6 -6 L28 -22 M-7 2 L-30 2 M7 2 L30 2 M-6 8 L-26 26 M6 8 L26 26" fill="none" />
+      {/* skateboard */}
+      {enter === 'skate' && (
+        <g transform={`rotate(${(1 - inn) * -10} 170 505)`}>
+          <rect x="40" y="492" width="260" height="18" rx="9" fill="#7C3AED" stroke={OL} strokeWidth="5" />
+          <circle cx="85" cy="518" r="13" fill="#fff" stroke={OL} strokeWidth="5" />
+          <circle cx="255" cy="518" r="13" fill="#fff" stroke={OL} strokeWidth="5" />
+        </g>
+      )}
+      {/* legs */}
+      <path d="M130 400 L122 488 M210 400 L218 488" stroke={SK} strokeWidth="30" strokeLinecap="round" />
+      <path d="M130 400 L122 488 M210 400 L218 488" stroke={OL} strokeWidth="38" strokeLinecap="round" opacity="0" />
+      <rect x="90" y="476" width="62" height="24" rx="12" fill="#fff" stroke={OL} strokeWidth="5" />
+      <rect x="190" y="476" width="62" height="24" rx="12" fill="#fff" stroke={OL} strokeWidth="5" />
+      {/* shorts */}
+      <path d="M100 360 L240 360 L248 430 L178 430 L170 400 L162 430 L92 430 Z" fill="#1F2937" stroke={OL} strokeWidth="5" strokeLinejoin="round" />
+      {/* back arm */}
+      <g transform={`rotate(${armB} 112 290)`}>
+        <path d="M112 290 L70 380" stroke={SHIRT} strokeWidth="34" strokeLinecap="round" />
+        <circle cx="66" cy="392" r="19" fill={SK} stroke={OL} strokeWidth="5" />
       </g>
-      {/* waving arm */}
-      <g transform={`rotate(${arm} 300 360)`}>
-        <path d="M300 360 Q370 330 372 260" fill="none" stroke="#D7263D" strokeWidth="38" strokeLinecap="round" />
-        <path d="M300 360 Q370 330 372 260" fill="none" stroke={OL} strokeWidth="46" strokeLinecap="round" opacity="0" />
-        <circle cx="372" cy="246" r="24" fill={SK} stroke={OL} strokeWidth="5" />
-        <path d="M360 226 L358 208 M374 222 L376 204 M386 230 L394 216" stroke={OL} strokeWidth="5" strokeLinecap="round" />
+      {/* hoodie torso with striped hem */}
+      <path d="M98 270 Q170 250 242 270 L250 372 Q170 384 90 372 Z" fill={SHIRT} stroke={OL} strokeWidth="5" strokeLinejoin="round" />
+      <path d="M94 352 Q170 364 246 352" stroke="#FACC15" strokeWidth="9" fill="none" />
+      {/* lightning bolt print */}
+      <path d="M176 288 L152 326 L170 326 L160 356 L192 314 L174 314 L188 288 Z" fill="#FACC15" stroke={OL} strokeWidth="4" strokeLinejoin="round" />
+      {/* front arm (points at the title when point=true) */}
+      <g transform={`rotate(${armA} 232 290)`}>
+        <path d="M232 290 L262 384" stroke={SHIRT} strokeWidth="34" strokeLinecap="round" />
+        <circle cx="266" cy="398" r="20" fill={SK} stroke={OL} strokeWidth="5" />
+        {point && <path d="M270 410 L282 450" stroke={SK} strokeWidth="12" strokeLinecap="round" />}
       </g>
-      {/* neck + head */}
-      <rect x="168" y="270" width="64" height="70" fill={SK} stroke={OL} strokeWidth="5" />
-      <g transform={`rotate(${Math.sin(frame / 14) * 3} 200 200)`}>
-        <path d="M110 300 L110 130 Q110 50 200 50 Q290 50 290 130 L290 300 Q200 320 110 300 Z" fill={SK} stroke={OL} strokeWidth="5" />
-        {/* hair spikes (own style, swept) */}
-        <path d="M118 92 L130 40 L150 78 L172 26 L190 70 L214 22 L230 70 L258 34 L262 84 L286 66 L284 108 Q200 70 118 92 Z" fill="#2B2B2B" stroke={OL} strokeWidth="5" strokeLinejoin="round" />
+      {/* neck */}
+      <rect x="150" y="226" width="44" height="46" fill={SK} stroke={OL} strokeWidth="5" />
+      {/* head */}
+      <g transform={`rotate(${Math.sin(frame / 7) * 4 + accent * 10} 172 200)`}>
+        {/* tall rounded head */}
+        <path d="M100 240 L104 92 Q106 40 172 40 Q238 40 240 92 L244 240 Q172 262 100 240 Z" fill={SK} stroke={OL} strokeWidth="5" />
+        {/* messy tuft hair + backwards cap */}
+        <path d="M104 70 Q172 6 240 70 L240 92 Q172 70 104 92 Z" fill="#EF4444" stroke={OL} strokeWidth="5" strokeLinejoin="round" />
+        <path d="M100 86 Q60 92 52 108 Q90 110 110 96 Z" fill="#B91C1C" stroke={OL} strokeWidth="5" strokeLinejoin="round" />
+        <path d="M150 24 Q160 0 176 18 Q186 -4 200 20" fill="none" stroke={OL} strokeWidth="6" strokeLinecap="round" />
         {/* ear */}
-        <path d="M110 190 Q86 186 88 214 Q92 238 112 232" fill={SK} stroke={OL} strokeWidth="5" />
+        <path d="M104 160 Q80 156 82 182 Q86 206 106 200" fill={SK} stroke={OL} strokeWidth="5" />
         {/* brows */}
-        <path d={`M150 ${128 - brow} Q178 ${116 - brow} 200 ${128 - brow}`} stroke={OL} strokeWidth="7" fill="none" strokeLinecap="round" />
-        <path d={`M214 ${128 - brow} Q240 ${116 - brow} 262 ${128 - brow}`} stroke={OL} strokeWidth="7" fill="none" strokeLinecap="round" />
-        {/* big eyes */}
-        {[175, 238].map((cx) => (
+        <path d={`M136 ${108 - brow} L170 ${114 - brow * 0.5}`} stroke={OL} strokeWidth="8" strokeLinecap="round" />
+        <path d={`M186 ${114 - brow * 0.5} L222 ${106 - brow}`} stroke={OL} strokeWidth="8" strokeLinecap="round" />
+        {/* eyes */}
+        {[152, 208].map((cx) => (
           <g key={cx}>
-            <ellipse cx={cx} cy="170" rx="34" ry={34 * blink} fill="#fff" stroke={OL} strokeWidth="5" />
-            {blink > 0.5 && <circle cx={cx + 9 * lookX} cy="172" r="7" fill={OL} />}
+            <circle cx={cx} cy="140" r={30} fill="#fff" stroke={OL} strokeWidth="5" transform={`translate(0 ${140 * (1 - blink)}) scale(1 ${blink})`} />
+            {blink > 0.5 && <circle cx={cx + 8 + pupil} cy="142" r="7" fill={OL} />}
           </g>
         ))}
+        {/* freckles */}
+        {[[136, 186], [146, 192], [222, 186], [212, 192]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3" fill="#D97706" />)}
         {/* nose */}
-        <path d="M206 196 Q238 200 236 220 Q234 236 206 232" fill={SK} stroke={OL} strokeWidth="5" />
-        {/* mouth */}
-        <g transform="translate(206 262)">
-          <ellipse rx={40 + m * 6} ry={5 + m * 30} fill="#5A0F1A" stroke={OL} strokeWidth="5" />
-          {m > 0.25 && <ellipse cy={m * 18} rx={20} ry={m * 10} fill="#E86A7A" />}
-          {m > 0.15 && <rect x={-26} y={-5 - m * 26} width="52" height={Math.min(10, m * 14)} rx="3" fill="#fff" />}
+        <path d="M180 156 Q206 160 204 178 Q202 192 180 188" fill={SK} stroke={OL} strokeWidth="5" />
+        {/* mouth: grin when silent, open when talking */}
+        <g transform="translate(180 216)">
+          {m < 0.08 ? (
+            <path d="M-34 -4 Q0 22 34 -8" fill="none" stroke={OL} strokeWidth="6" strokeLinecap="round" />
+          ) : (
+            <>
+              <path d={`M-36 -6 Q0 ${-10} 36 -8 Q${20} ${8 + m * 40} 0 ${10 + m * 40} Q-22 ${8 + m * 40} -36 -6 Z`} fill="#5A0F1A" stroke={OL} strokeWidth="5" strokeLinejoin="round" />
+              <path d="M-26 -6 L26 -7 L24 2 L-24 2 Z" fill="#fff" />
+              {m > 0.3 && <ellipse cy={6 + m * 32} rx="16" ry={m * 9} fill="#F87171" />}
+            </>
+          )}
         </g>
       </g>
     </svg>

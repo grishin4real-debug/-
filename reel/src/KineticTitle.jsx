@@ -1,4 +1,4 @@
-import { useCurrentFrame, useVideoConfig, spring, interpolate, Easing } from 'remotion';
+import { useCurrentFrame, useVideoConfig, spring, interpolate, Easing, random } from 'remotion';
 
 // Alternating size multipliers so neighbouring letters differ in scale.
 const SIZE = [1, 1.16, 0.9, 1.08, 0.95, 1.12];
@@ -8,11 +8,19 @@ const parse = (word) => {
   return { text: hl ? word.slice(1, -1) : word, hl };
 };
 
+const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' };
+
 /**
- * Letter-by-letter title. Each glyph is two halves (top/bottom) that slide in
- * from opposite sides and fuse; on exit they slice apart again.
+ * Per-letter kinetic title.
+ * fx: 'slice' — halves slide in from opposite sides and fuse
+ *     'drop'  — letters fall in with squash & stretch
+ *     'zoom'  — letters fly in from the camera, blurred
+ *     'glitch'— RGB-split jitter that settles
+ *     'wave'  — rise from below on a sine wave
+ * Every letter keeps a subtle idle wobble; highlighted words (*word*) get a moving gradient.
+ * Exit always slices letters apart.
  */
-export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, exitAt, y = 0 }) => {
+export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, exitAt, y = 0, fx = 'slice', stagger = 1.7, color = '#fff', hl = ['#FFE14D', '#FF8A00'], charW = 1.08 }) => {
   const frame = useCurrentFrame() - delay;
   const { fps } = useVideoConfig();
   const exitStart = exitAt ?? dur - 12;
@@ -24,52 +32,79 @@ export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, ex
         const words = line.map(parse);
         const chars = words.reduce((n, w) => n + w.text.length, 0) + words.length - 1;
         // Unbounded caps are ~1em wide; leave room for the largest size multiplier
-        const fs = Math.min(size, 900 / (chars * 1.08));
+        const fs = Math.min(size, 900 / (chars * charW));
         return (
           <div key={li} style={{ display: 'flex', gap: fs * 0.32, alignItems: 'flex-end', lineHeight: 0.92 }}>
             {words.map((w, wi) => (
               <div key={wi} style={{ display: 'flex' }}>
                 {[...w.text].map((ch, ci) => {
                   const i = idx++;
-                  const d = i * 1.7;
-                  const s = spring({ frame: frame - d, fps, config: { damping: 12, stiffness: 170, mass: 0.7 } });
-                  const out = interpolate(frame - exitStart - i * 0.6, [0, 9], [0, 1], {
-                    extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.in(Easing.cubic),
-                  });
+                  const local = frame - i * stagger;
+                  const soft = spring({ frame: local, fps, config: { damping: 12, stiffness: 170, mass: 0.7 } });
+                  const bouncy = spring({ frame: local, fps, config: { damping: 7, stiffness: 200, mass: 0.6 } });
+                  const out = interpolate(frame - exitStart - i * 0.6, [0, 9], [0, 1], { ...clamp, easing: Easing.in(Easing.cubic) });
                   const mult = SIZE[i % SIZE.length];
-                  const cut = (1 - s) * 90 + out * 120; // horizontal slice offset
-                  const rot = (1 - s) * (i % 2 ? -22 : 22);
+                  const settled = Math.min(1, Math.max(0, local / 20));
+                  // idle life after entry
+                  const wob = Math.sin((frame + i * 9) / 11) * 4 * settled;
+                  const tilt = Math.sin((frame + i * 13) / 17) * 3 * settled;
+
+                  let tx = 0, ty = 0, rot = 0, sc = 1, sx = 1, sy = 1, blur = 0, op = 1, cut = 0, split = 0;
+                  if (fx === 'slice') {
+                    ty = (1 - soft) * 140; rot = (1 - soft) * (i % 2 ? -22 : 22); sc = Math.max(0, soft); cut = (1 - soft) * 90; op = Math.min(1, soft * 2);
+                  } else if (fx === 'drop') {
+                    ty = (1 - bouncy) * -700;
+                    const impact = interpolate(local, [8, 11, 18], [0, 1, 0], clamp);
+                    sx = 1 + impact * 0.35; sy = 1 - impact * 0.3; op = local > 0 ? 1 : 0;
+                  } else if (fx === 'zoom') {
+                    sc = interpolate(soft, [0, 1], [7, 1]); blur = (1 - soft) * 24; op = Math.min(1, soft * 1.5);
+                    rot = (1 - soft) * (random(`r${i}`) - 0.5) * 80;
+                  } else if (fx === 'glitch') {
+                    const g = interpolate(local, [0, 16], [1, 0], clamp);
+                    tx = (random(`gx${i}${Math.floor(frame / 2)}`) - 0.5) * 70 * g;
+                    split = 14 * g + 2 * settled * (Math.floor(frame / 3 + i) % 9 === 0 ? 1 : 0);
+                    op = local > 0 ? 1 : 0; sc = 0.6 + 0.4 * soft;
+                  } else if (fx === 'wave') {
+                    ty = (1 - soft) * 260 + Math.sin(local / 3) * 30 * (1 - soft); op = Math.min(1, soft * 2); sc = 0.5 + 0.5 * soft;
+                  }
+                  cut += out * 120;
+
+                  const fill = w.hl
+                    ? { backgroundImage: `linear-gradient(${100 + frame * 4}deg, ${hl[0]} 20%, #fff 45%, ${hl[0]} 60%, ${hl[1]} 100%)`, backgroundSize: '200% 100%', backgroundPosition: `${(frame * 3 + i * 20) % 200}% 0`, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }
+                    : { color };
                   const base = {
-                    fontFamily: 'Unbounded', fontWeight: 900, fontSize: fs * mult,
-                    color: w.hl ? '#FFE14D' : '#fff', whiteSpace: 'pre',
-                    textShadow: w.hl
-                      ? '0 5px 0 #E8590C, 0 10px 0 #9A2B05, 0 24px 40px rgba(0,0,0,.55)'
-                      : '0 6px 0 rgba(0,0,0,.28), 0 22px 44px rgba(0,0,0,.55)',
+                    fontFamily: 'Unbounded', fontWeight: 900, fontSize: fs * mult, whiteSpace: 'pre',
+                    WebkitTextStroke: '0px', ...fill,
                   };
+                  const shadow = w.hl
+                    ? `drop-shadow(0 6px 0 #C2410C) drop-shadow(0 10px 0 #7C2D12) drop-shadow(0 22px 30px rgba(0,0,0,.55))`
+                    : `drop-shadow(0 6px 0 rgba(0,0,0,.3)) drop-shadow(0 20px 30px rgba(0,0,0,.55))`;
                   const half = (top) => (
                     <span
                       style={{
-                        ...base,
-                        position: top ? 'relative' : 'absolute',
-                        left: 0, top: 0,
-                        display: 'block',
-                        clipPath: top ? 'polygon(0 0,100% 0,100% 52%,0 58%)' : 'polygon(0 58%,100% 52%,100% 100%,0 100%)',
+                        ...base, position: top ? 'relative' : 'absolute', left: 0, top: 0, display: 'block',
+                        // halves overshoot the glyph box so diacritics (Й, Ё) and descenders are not clipped
+                        clipPath: top ? 'polygon(-30% -60%,130% -60%,130% 52%,-30% 58%)' : 'polygon(-30% 58%,130% 52%,130% 160%,-30% 160%)',
                         transform: `translateX(${(top ? -1 : 1) * cut}px) translateY(${(top ? -1 : 1) * out * 14}px)`,
                       }}
                     >
                       {ch}
                     </span>
                   );
+                  const ghost = (c, dx) => (
+                    <span style={{ ...base, color: c, backgroundImage: 'none', position: 'absolute', left: dx, top: 0, mixBlendMode: 'screen', opacity: 0.85 }}>{ch}</span>
+                  );
                   return (
                     <span
                       key={ci}
                       style={{
-                        position: 'relative', display: 'inline-block',
-                        transform: `translateY(${(1 - s) * 140}px) rotate(${rot}deg) scale(${Math.max(0, s)})`,
-                        opacity: Math.min(1, s * 2) * (1 - out),
-                        transformOrigin: '50% 80%',
+                        position: 'relative', display: 'inline-block', filter: `${shadow} blur(${blur}px)`,
+                        transform: `translate(${tx}px, ${ty + wob}px) rotate(${rot + tilt}deg) scale(${sc}) scaleX(${sx}) scaleY(${sy})`,
+                        opacity: op * (1 - out), transformOrigin: '50% 90%',
                       }}
                     >
+                      {split > 0.5 && ghost('#ff0050', -split)}
+                      {split > 0.5 && ghost('#00e5ff', split)}
                       {half(true)}
                       {half(false)}
                     </span>
@@ -80,6 +115,27 @@ export const KineticTitle = ({ lines, dur, delay = 0, size = 190, gap = 0.04, ex
           </div>
         );
       })}
+    </div>
+  );
+};
+
+/** Rolling number counter (slot-machine digits). */
+export const Counter = ({ from, to, start, len, size = 300, prefix = '', color = '#fff' }) => {
+  const frame = useCurrentFrame();
+  const t = interpolate(frame, [start, start + len], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const v = Math.round(from + (to - from) * t);
+  const done = frame >= start + len;
+  const { fps } = useVideoConfig();
+  const pop = spring({ frame: frame - start - len, fps, config: { damping: 6, stiffness: 260 } });
+  return (
+    <div
+      style={{
+        fontFamily: 'Unbounded', fontWeight: 900, fontSize: size, color, lineHeight: 1,
+        transform: `scale(${done ? 1 + (1 - pop) * 0.6 : 1}) rotate(${done ? (1 - pop) * -8 : Math.sin(frame) * 2}deg)`,
+        filter: 'drop-shadow(0 10px 0 rgba(0,0,0,.35)) drop-shadow(0 30px 40px rgba(0,0,0,.5))',
+      }}
+    >
+      {prefix}{v}
     </div>
   );
 };
