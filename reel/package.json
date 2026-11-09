@@ -1,0 +1,16 @@
+{
+  "name": "hoplite-reel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.jsx",
+    "render": "remotion render src/index.jsx Reel out/reel.mp4 --codec h264 --crf 18",
+    "still": "remotion still src/index.jsx Reel out/still.png"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.542",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.542"
+  }
+}

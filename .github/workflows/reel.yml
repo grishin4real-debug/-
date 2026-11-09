@@ -1,0 +1,48 @@
+name: Render reel
+
+on:
+  push:
+    paths: ['reel/**', '.github/workflows/reel.yml']
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: reel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: reel/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: System deps
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Narrator voice (piper TTS)
+        run: |
+          pip install piper-tts==1.8.0
+          mkdir -p ~/piper
+          base=https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/dmitri/medium
+          curl -sL -o ~/piper/ru.onnx "$base/ru_RU-dmitri-medium.onnx"
+          curl -sL -o ~/piper/ru.onnx.json "$base/ru_RU-dmitri-medium.onnx.json"
+          python scripts/voice.py "$(command -v piper)" ~/piper/ru.onnx
+
+      - run: npm ci
+
+      - name: Render
+        run: npx remotion render src/index.jsx Reel out/reel.mp4 --codec h264 --crf 18
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reel
+          path: reel/out/reel.mp4
