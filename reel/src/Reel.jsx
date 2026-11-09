@@ -12,6 +12,7 @@ import { Captions } from './Captions.jsx';
 import { PixelScene } from './PixelScene.jsx';
 import { Confetti, Shake } from './Fx.jsx';
 import { NEON, glass, neonText } from './style.js';
+import { CameraRig, Parallax, evalCam, WIDE } from './Camera.jsx';
 
 const TITLE_Y = 230;
 const MEDIA_TOP = 680;
@@ -141,13 +142,22 @@ const Coupon = ({ dur, cue }) => {
   );
 };
 
+/** Shared timing for the price scene so the body and the camera agree. Keeps beats ≥10 frames apart. */
+const zeroBeats = (cue) => {
+  const start = cue('стало', 0, 30);
+  const hit = Math.max(start + 10, cue('ноль', 0, start + 20));
+  const pops = [];
+  ['первый', 'второй', 'третий'].forEach((w, i) => {
+    pops.push(Math.max(cue(w, 0, hit + 12 * (i + 1)), (i ? pops[i - 1] : hit) + 12));
+  });
+  return { start, hit, pops };
+};
+
 const Zero = ({ dur, cue }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
   // beats follow the narration: "Стало" → counter, "ноль" → boom, "первый/второй/третий" → month cards
-  const start = cue('стало', 0, 30);
-  const hit = Math.max(start + 10, cue('ноль', 0, start + 20));
-  const pops = [cue('первый', 0, hit + 10), cue('второй', 0, hit + 22), cue('третий', 0, hit + 34)];
+  const { start, hit, pops } = zeroBeats(cue);
   const strike = interpolate(f, [start - 14, start], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
   const old = spring({ frame: f - 2, fps, config: { damping: 12 } });
   const months = ['МЕС 1', 'МЕС 2', 'МЕС 3'];
@@ -193,13 +203,15 @@ const Inside = ({ dur, cue }) => {
     ['ВИДЕО', NEON.gold], ['ДИЗАЙН', NEON.lime],
   ];
   const meta = cue('этот', 0, dur - 60);
+  // each card lands just before its word is spoken (the camera visits it on that word)
+  const appear = [cue('игры', 0, 26) - 8, cue('сайты', 0, 35) - 8, cue('видео', 0, 53) - 8, cue('дизайн', 0, 44) - 8];
   return (
     <>
       <KineticTitle lines={[['ЧТО'], ['*ВНУТРИ?*']]} dur={dur} size={170} y={TITLE_Y} fx="wave" neon={NEON.violet} />
       <div style={{ position: 'absolute', left: 70, right: 70, top: MEDIA_TOP + 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36 }}>
         {cards.map(([t, c], i) => {
           // cards fly in, then collapse away when the "this reel" punchline lands
-          const p = spring({ frame: f - 20 - i * 9, fps, config: { damping: 10, stiffness: 130 } })
+          const p = spring({ frame: f - appear[i], fps, config: { damping: 10, stiffness: 130 } })
             - spring({ frame: f - meta + i * 2, fps, config: { damping: 14, stiffness: 160 } });
           const hover = Math.sin((f + i * 20) / 14) * 10;
           const shine = ((f * 6 + i * 90) % 900) - 300;
@@ -357,6 +369,95 @@ const makeCue = (s) => (word, nth = 0, fallback = 0) => {
 
 const BODIES = { hook: Hook, plan: Plan, coupon: Coupon, zero: Zero, inside: Inside, versus: Versus, tg: Tg };
 
+// ----- camera moves: follow each title as it types on, then travel to whatever is being said -----
+const k = (f, o = {}) => ({ f, ...WIDE, ...o });
+/** Pan left→right across a title line while its letters appear. */
+const follow = (y, f0 = 0, len = 20, s = 1.22) => [
+  k(f0, { x: 360, y, s, r: -3, rx: 6, ry: -12 }),
+  k(f0 + len, { x: 720, y, s: s - 0.04, r: 2, rx: 2, ry: 10 }),
+];
+const TITLE_C = TITLE_Y + 165; // centre of a two-line scene title
+
+const CAMS = {
+  hook: (cue, dur) => [
+    ...follow(TITLE_Y + 90, 0, 20, 1.18),
+    k(32, { x: 540, y: TITLE_Y + 285, s: 1.22, r: -1, rx: 5 }),
+    k(48, { x: 540, y: 900, s: 0.98 }),
+    k(60, { x: 540, y: 1000, s: 1.1, r: 2 }),
+    k(68, { x: 540, y: 1000, s: 1.32, r: -2, ease: 'snap' }),
+    k(dur, { x: 540, y: 960, s: 1.05, ry: 6 }),
+  ],
+  plan: (cue, dur) => [
+    ...follow(TITLE_C, 0, 18, 1.18),
+    k(30, { x: 540, y: 960, s: 1 }),
+    k(Math.round(dur * 0.6), { x: 540, y: 1060, s: 1.08, rx: 3, ry: -6 }),
+    k(dur, { x: 540, y: 1080, s: 1.15, r: 1, ry: 6 }),
+  ],
+  coupon: (cue, dur) => {
+    const at = cue('минус', 0, dur - 50);
+    return [
+      ...follow(TITLE_C, 0, 18, 1.18),
+      k(30, { x: 540, y: 960, s: 1 }),
+      k(at - 4, { x: 540, y: 1080, s: 1.08, ry: -6 }),
+      k(at + 6, { x: 540, y: 1300, s: 1.28, r: -6, ease: 'snap' }),
+      k(dur, { x: 540, y: 1250, s: 1.18, r: -3 }),
+    ];
+  },
+  zero: (cue, dur) => {
+    const { start, hit, pops } = zeroBeats(cue);
+    return [
+      k(0, { x: 540, y: TITLE_Y + 90, s: 1.3, r: -3, ry: -8 }),
+      k(Math.max(14, start - 10), { x: 540, y: MEDIA_TOP + 10, s: 1.3, r: 2, rx: 6 }),
+      k(start + 4, { x: 540, y: 960, s: 1.1, ease: 'snap' }),
+      k(hit + 4, { x: 540, y: MEDIA_TOP + 295, s: 1.32, r: -3, ease: 'snap' }),
+      k(pops[0], { x: 300, y: MEDIA_TOP + 560, s: 1.3, r: -2, ease: 'snap' }),
+      k(pops[1], { x: 540, y: MEDIA_TOP + 570, s: 1.3, ease: 'snap' }),
+      k(pops[2], { x: 780, y: MEDIA_TOP + 560, s: 1.3, r: 2, ease: 'snap' }),
+      k(dur, { x: 540, y: 1050, s: 0.98 }),
+    ];
+  },
+  inside: (cue, dur) => {
+    const meta = cue('этот', 0, dur - 60);
+    const visit = (word, fb, x, y, o) => k(cue(word, 0, fb) + 2, { x, y, s: 1.45, ease: 'snap', ...o });
+    return [
+      ...follow(TITLE_C, 0, 20, 1.2),
+      k(cue('игры', 0, 26) - 8, { x: 540, y: 1000, s: 1 }),
+      visit('игры', 26, 300, 860, { r: -3, ry: -10 }),
+      visit('сайты', 35, 780, 860, { r: 2, ry: 10 }),
+      visit('дизайн', 44, 780, 1190, { r: 3, rx: -8 }),
+      visit('видео', 53, 300, 1190, { r: -2, rx: -8 }),
+      k(meta - 2, { x: 540, y: 1000, s: 0.95 }),
+      k(meta + 14, { x: 540, y: 1010, s: 1.15, r: -4 }),
+      k(dur, { x: 540, y: 1010, s: 1.22, r: -2 }),
+    ];
+  },
+  versus: (cue, dur) => {
+    const reveal = cue('а', 0, 70);
+    return [
+      ...follow(TITLE_C, 0, 20, 1.2),
+      k(30, { x: 540, y: MEDIA_TOP + 200, s: 1.15, r: -3, ry: -8 }),
+      k(reveal - 6, { x: 620, y: MEDIA_TOP + 180, s: 1.25, r: -2 }),
+      k(reveal + 8, { x: 540, y: MEDIA_TOP + 620, s: 1.2, r: 3, ease: 'snap' }),
+      k(dur, { x: 500, y: MEDIA_TOP + 570, s: 1.32, r: 1, ry: 8 }),
+    ];
+  },
+  tg: (cue, dur) => {
+    const clickAt = cue('подписывайся', 0, 120);
+    const linkAt = cue('ссылка', 0, clickAt + 30);
+    return [
+      ...follow(TITLE_Y + 60, 0, 22, 1.25),
+      k(30, { x: 540, y: TITLE_Y + 210, s: 1.3, r: 2 }),
+      k(48, { x: 540, y: MEDIA_TOP + 180, s: 1.15, r: -2 }),
+      k(58, { x: 380, y: MEDIA_TOP + 415, s: 1.3, r: -2, ry: -8 }),
+      k(80, { x: 700, y: MEDIA_TOP + 415, s: 1.28, r: 2, ry: 8 }),
+      k(clickAt - 10, { x: 560, y: MEDIA_TOP + 500, s: 1.05 }),
+      k(clickAt + 4, { x: 600, y: MEDIA_TOP + 600, s: 1.35, r: -3, ease: 'snap' }),
+      k(linkAt + 4, { x: 640, y: MEDIA_TOP + 680, s: 1.15 }),
+      k(dur, { x: 540, y: 1100, s: 0.95 }),
+    ];
+  },
+};
+
 const useFonts = () => {
   const [handle] = useState(() => delayRender('fonts'));
   useEffect(() => {
@@ -373,23 +474,29 @@ const useFonts = () => {
 
 export const Reel = () => {
   useFonts();
+  const g = useCurrentFrame();
   let from = 0;
   const placed = timeline.scenes.map((s) => {
     const p = { ...s, from };
     from += s.frames;
-    return p;
+    return { ...p, cue: makeCue(p), cam: CAMS[p.id](makeCue(p), p.frames) };
   });
+  const cur = placed.find((s) => g < s.from + s.frames) || placed[placed.length - 1];
   return (
     <AbsoluteFill>
-      <Background palettes={placed.map((s) => PALETTES[s.id])} bounds={placed.map((s) => s.from)} />
+      <Parallax cam={evalCam(cur.cam, g - cur.from)}>
+        <Background palettes={placed.map((s) => PALETTES[s.id])} bounds={placed.map((s) => s.from)} />
+      </Parallax>
       {placed.map((s) => {
         const Body = BODIES[s.id];
         const stage = STAGE[s.id];
         return (
           <Sequence key={s.id} from={s.from} durationInFrames={s.frames} name={s.id}>
             <Shot dur={s.frames}>
-              {s.title?.length > 0 && s.id !== 'versus' && <KineticTitle lines={s.title} dur={s.frames} size={170} y={TITLE_Y} fx={s.id === 'plan' ? 'drop' : 'zoom'} neon={PALETTES[s.id][0]} />}
-              <Body dur={s.frames} cue={makeCue(s)} />
+              <CameraRig keys={s.cam}>
+                {s.title?.length > 0 && s.id !== 'versus' && <KineticTitle lines={s.title} dur={s.frames} size={170} y={TITLE_Y} fx={s.id === 'plan' ? 'drop' : 'zoom'} neon={PALETTES[s.id][0]} />}
+                <Body dur={s.frames} cue={s.cue} />
+              </CameraRig>
             </Shot>
             {s.id !== 'tg' && <Captions words={s.words} wordStarts={s.wordStarts} voiceFrom={s.voiceFrom} frames={s.mouth.length} side={stage.side} neon={PALETTES[s.id][0]} />}
             <Narrator mouth={s.mouth} voiceFrom={s.voiceFrom} side={stage.side} enter={stage.enter} point={stage.point} />
